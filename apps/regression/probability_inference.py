@@ -42,7 +42,7 @@ class MomentLayer(torch.nn.Module):
 class MoNet(torch.nn.Module):
     def __init__(self):
         super(MoNet, self).__init__()
-        self.layer_sizes = [2]+[64]*30+[1]  # input, hidden, output
+        self.layer_sizes = [2]+[64]*10+[1]  # input, hidden, output
         self.layers = torch.nn.ModuleList(
             [MomentLayer(self.layer_sizes[i], self.layer_sizes[i + 1]) for i in range(len(self.layer_sizes) - 1)])
 
@@ -137,8 +137,12 @@ def test_data(model, target_affine):
         target_mean = target_mean*target_affine[0] + target_affine[1]
         target_std = target_std*target_affine[2] + target_affine[3]
         
-        ax1.plot(target_mean, target_std,'r', alpha=0.5)
+        ax1.plot(target_mean, target_std,'r', alpha=0.4)
         ax1.plot(output_mean.detach().numpy(), output_std.detach().numpy(), 'r')
+    
+    ax1.set_xlabel('Output mean')
+    ax1.set_ylabel('Output std')
+    
     
     return fig1
 
@@ -147,7 +151,7 @@ if __name__ == "__main__":
     writer = SummaryWriter()#log_dir='D:\\mnn_py\\moment_activation\\runs2'
     
     
-    num_batches = 20#20 need more data to train well
+    num_batches = 500#20 need more data to train well
     batch_size = 64#64
     num_epoch = 100#1000
     
