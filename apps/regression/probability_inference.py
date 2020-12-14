@@ -10,9 +10,10 @@ torch.set_default_tensor_type(torch.DoubleTensor)
 #torch.manual_seed(seed)
 
 
-class MomentLayer(torch.nn.Module):
+class MomentLayer_no_corr(torch.nn.Module):
     def __init__(self, input_size, output_size):
         super(MomentLayer, self).__init__()
+        '''Ignores correlation completely'''
         self.input_size = input_size
         self.output_size = output_size
 
@@ -38,8 +39,51 @@ class MomentLayer(torch.nn.Module):
         s_activated = Mnn_Activate_Std.apply(u, s, u_activated)
         return u_activated, s_activated
 
+class MomentLayer(torch.nn.Module):
+    def __init__(self, input_size, output_size):
+        super(MomentLayer, self).__init__()
+        self.input_size = input_size
+        self.output_size = output_size
+
+        self.linear = Mnn_Linear_Corr(input_size, output_size)
+
+        self.bn_mean = torch.nn.BatchNorm1d(output_size)
+        self.bn_mean.weight.data.fill_(2.5)
+        self.bn_mean.bias.data.fill_(2.5)
+        #this roughly set the input mu in the range (0,5)
+
+        self.bn_std = torch.nn.BatchNorm1d(output_size)
+        self.bn_std.weight.data.fill_(2.5)
+        self.bn_std.bias.data.fill_(10.0)        
+        #intial bias for std should be large otherwise everything decays to zero.
+
+        return
+
+    def forward(self, u, s, rho):
+        u, s, rho = self.linear.forward(u, s, rho)
+        u = self.bn_mean(u)
+        s = self.bn_std(s)
+        u_activated = Mnn_Activate_Mean.apply(u, s)
+        s_activated = Mnn_Activate_Std.apply(u, s, u_activated)        
+        corr_activated = Mnn_Activate_Corr.apply( rho , u, s, u_activated, s_activated)
+        
+        return u_activated, s_activated, corr_activated
 
 class MoNet(torch.nn.Module):
+    def __init__(self):
+        super(MoNet, self).__init__()
+        self.layer_sizes = [2]+[64]*10+[1]  # input, hidden, output
+        self.layers = torch.nn.ModuleList(
+            [MomentLayer(self.layer_sizes[i], self.layer_sizes[i + 1]) for i in range(len(self.layer_sizes) - 1)])
+
+        return
+
+    def forward(self, u, s, rho):
+        for i in range(len(self.layer_sizes) - 1):
+            u, s, rho = self.layers[i].forward(u, s, rho)
+        return u, s, rho
+
+class MoNet_no_corr(torch.nn.Module):
     def __init__(self):
         super(MoNet, self).__init__()
         self.layer_sizes = [2]+[64]*10+[1]  # input, hidden, output
@@ -53,13 +97,12 @@ class MoNet(torch.nn.Module):
             u, s = self.layers[i].forward(u, s)
         return u, s
 
-
 def synthetic_data(num_batches = 100, batch_size = 16 ):
     
     input_mean = 1 * torch.rand(batch_size, 2, num_batches) #NB: 0<min(input mean)< output mean < max(input mean)<1/Tref = 0.2
     input_mean[:,1,:] = 0.0 #fix one of the distributions to unit gaussian
     input_std = 2 * torch.rand(batch_size, 2, num_batches) + 1
-    input_std[:,1,:] = 1.0 #fix one of the distributions to unit gaussian
+    input_std[:,1,:] = 1.0 #fix one of the distributions to unit gaussian    
     
     fun1 = lambda mu1, mu2, v1, v2: (v2 * mu1 + v1 * mu2) / (v1 + v2)
     fun2 = lambda v1, v2: v1 * v2 / (v1 + v2)
@@ -80,8 +123,12 @@ def synthetic_data(num_batches = 100, batch_size = 16 ):
     
     target_mean = target_mean*mean_scale + mean_bias
     target_std = target_std*std_scale + std_bias
+    
+    input_corr = (torch.eye(2) + (1-torch.eye(2))*0.1).unsqueeze(0).repeat(batch_size,1,1) #NB must be symmetric and positive definite
+    
+    target_corr = [] #to be added
         
-    return input_mean, input_std, target_mean, target_std, (mean_scale, mean_bias, std_scale, std_bias)
+    return (input_mean, input_std, input_corr), (target_mean, target_std, target_corr), (mean_scale, mean_bias, std_scale, std_bias)
 
 def test_data(model, target_affine):
     
@@ -91,6 +138,8 @@ def test_data(model, target_affine):
     
     mean = torch.linspace(0,1,10)
     model.eval()
+    
+    input_corr = (torch.eye(2) + (1-torch.eye(2))*0.1).unsqueeze(0).repeat(100,1,1)
     
     fig1 = plt.figure()            
     ax1 = fig1.add_subplot(111)
@@ -107,7 +156,7 @@ def test_data(model, target_affine):
         input_std2 = torch.ones(100,2)
         input_std2[:,0] = input_std
         
-        output_mean, output_std = model.forward(input_mean2,input_std2)
+        output_mean, output_std, output_corr = model.forward(input_mean2, input_std2, input_corr)
         
         
         target_mean = target_mean*target_affine[0] + target_affine[1]
@@ -131,8 +180,7 @@ def test_data(model, target_affine):
         input_std2[:,0] = input_std
         
         
-        output_mean, output_std = model.forward(input_mean2,input_std2)
-        
+        output_mean, output_std, output_corr = model.forward(input_mean2, input_std2, input_corr)        
         
         target_mean = target_mean*target_affine[0] + target_affine[1]
         target_std = target_std*target_affine[2] + target_affine[3]
@@ -155,9 +203,10 @@ if __name__ == "__main__":
     batch_size = 64#64
     num_epoch = 100#1000
     
-    input_mean, input_std, target_mean, target_std, target_affine = synthetic_data(num_batches = num_batches, batch_size = batch_size)
+    train_input, train_target, target_affine = synthetic_data(num_batches = num_batches, batch_size = batch_size)
     #param_container.set_ratio(0.1) # E/I balance. Mostly affect initialization. Mild value seems to improve result.
     #param_container.set_eps(0.01) # 1. Ensures sigma is positive; 2. avoid divide by 0 error. 3. Avoid overflow. Shouldn't need this to be too big. If error still occurs look for other sources.
+    
     
     lr = 0.01
     momentum = 0.9
@@ -173,8 +222,8 @@ if __name__ == "__main__":
     for epoch in range(num_epoch):
         for j in range(num_batches):
             optimizer.zero_grad()
-            u, s = model.forward(input_mean[:,:,j],input_std[:,:,j])
-            loss = loss_function_mse(u, s, target_mean[:,:,j], target_std[:,:,j])
+            u, s, rho = model.forward(train_input[0][:,:,j], train_input[1][:,:,j], train_input[2])
+            loss = loss_function_mse(u, s, train_target[0][:,:,j], train_target[1][:,:,j])
             loss.backward()
             optimizer.step()
     
