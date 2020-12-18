@@ -320,26 +320,6 @@ class Mnn_Activate_Corr(torch.autograd.Function):
         return corr_grad_corr, corr_grad_mean, corr_grad_std, grad_mean_out, grad_std_out
 
 
-class Mnn_Layer_without_Rho(torch.nn.Module):
-    def __init__(self, d_in, d_out):
-        super(Mnn_Layer_without_Rho, self).__init__()
-        self.fc = Mnn_Linear_without_Corr(d_in, d_out)
-        self.bn_mean = torch.nn.BatchNorm1d(d_out)
-        self.bn_mean.weight.data.fill_(2.5)
-        self.bn_mean.bias.data.fill_(2.5)
-
-        self.a1 = Mnn_Activate_Mean.apply
-        self.a2 = Mnn_Activate_Std.apply
-
-    def forward(self, ubar, sbar):
-        ubar, sbar = self.fc(ubar, sbar)
-        ubar = self.bn_mean(ubar)
-        sbar = mnn_std_bn1d(self.bn_mean, ubar, sbar)
-        u = self.a1(ubar, sbar)
-        s = self.a2(ubar, sbar, u)
-        return u, s
-
-
 def mnn_std_bn1d(module, mean, std):
     assert type(module).__name__ == "BatchNorm1d"
     weight = module.weight
@@ -350,6 +330,25 @@ def mnn_std_bn1d(module, mean, std):
     return std
 
 
+class Mnn_Layer_without_Rho(torch.nn.Module):
+    def __init__(self, d_in, d_out, bias=False):
+        super(Mnn_Layer_without_Rho, self).__init__()
+        self.fc = Mnn_Linear_without_Corr(d_in, d_out, bias=bias)
+        self.bn_mean = torch.nn.BatchNorm1d(d_out)
+        self.bn_mean.weight.data.fill_(2.5)
+        self.bn_mean.bias.data.fill_(2.5)
+        self.a1 = Mnn_Activate_Mean.apply
+        self.a2 = Mnn_Activate_Std.apply
+
+    def forward(self, ubar, sbar):
+        ubar, sbar = self.fc(ubar, sbar)
+        sbar = mnn_std_bn1d(self.bn_mean, ubar, sbar)
+        ubar = self.bn_mean(ubar)
+        u = self.a1(ubar, sbar)
+        s = self.a2(ubar, sbar, u)
+        return u, s
+
+
 if __name__ == "__main__":
     batch = 2
     neuron = 2
@@ -358,5 +357,4 @@ if __name__ == "__main__":
     print(u, s, sep="\n")
     bn = Mnn_Layer_without_Rho(2, 2)
     u, s = bn(u, s)
-
     print(u, s, sep="\n")
