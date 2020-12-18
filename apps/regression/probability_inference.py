@@ -4,6 +4,8 @@ import torch
 import time
 import matplotlib.pyplot as plt
 from torch.utils.tensorboard import SummaryWriter
+from ray import tune
+import json
 
 torch.set_default_tensor_type(torch.DoubleTensor)
 #seed = 5
@@ -43,6 +45,7 @@ torch.set_default_tensor_type(torch.DoubleTensor)
 #         s_activated = Mnn_Activate_Std.apply(u, s, u_activated)        
 #         return u_activated, s_activated
 
+
 class MomentLayer(torch.nn.Module):
     def __init__(self, input_size, output_size):
         super(MomentLayer, self).__init__()
@@ -67,11 +70,23 @@ class MomentLayer(torch.nn.Module):
         self.corr = 0
 
         return
-
+    
+    def mybatchnorm(self, x, u):
+        gam = self.bn_mean.weight
+        
+        if self.training:
+            y = x/torch.std(u, 0, keepdim = True)*torch.abs(gam)
+        else:
+            y = x/torch.sqrt(self.bn_mean.running_var)*torch.abs(gam)
+        return y
+    
     def forward(self, u, s, rho):
         u, s, rho = self.linear.forward(u, s, rho)
+        
+        s = self.mybatchnorm(s, u)
+        #s = self.bn_std(s)
         u = self.bn_mean(u)
-        s = self.bn_std(s)
+                
         u_activated = Mnn_Activate_Mean.apply(u, s)
         s_activated = Mnn_Activate_Std.apply(u, s, u_activated)        
         corr_activated = Mnn_Activate_Corr.apply( rho , u, s, u_activated, s_activated)
@@ -258,7 +273,7 @@ class ProbInference():
     @staticmethod
     def train(config):
         
-        writer = SummaryWriter()#log_dir='D:\\mnn_py\\moment_activation\\runs2'
+        writer = SummaryWriter(comment = str(config['trial_id']))#log_dir='D:\\mnn_py\\moment_activation\\runs2'
         
         num_batches = config['num_batches'] #500#20 need more data to train well
         batch_size = config['batch_size'] #64
@@ -298,6 +313,8 @@ class ProbInference():
             writer.add_scalar("Loss/Train", loss, epoch)
             writer.flush()
             
+            #tune.report(loss = loss.item())
+            
             if epoch % 1 == 0:
                 print('Training epoch {}/{}'.format(epoch,num_epoch))
                 # ii = 0
@@ -313,7 +330,7 @@ class ProbInference():
             #for param in model.layers[0].bn_mean.named_parameters(): param[0] gives names, param[1] gives values
             
         
-        print("===============================")
+        #print("===============================")
         print("Number of batches: ", num_batches)
         print("Batch size: ",batch_size)
         print("Learning rate: ", lr)
@@ -338,22 +355,25 @@ class ProbInference():
         writer.flush()
         writer.close()
         
-        torch.save(model.state_dict(), './data/regression/{}.py'.format(int(time.time()))) #save result by time stamp
-        
+        file_name = config['trial_id']
+        torch.save(model.state_dict(), './data/regression/{}.pt'.format(file_name) ) #save result by time stamp
+        with open('./data/regression/{}_config.json'.format(file_name),'w') as f:
+            json.dump(config,f)
         
         return model
 
 if __name__ == "__main__":    
 
-    config = {'num_batches': 50,
+    config = {'num_batches': 100,
               'batch_size': 64,
-              'num_epoch': 10,
+              'num_epoch': 30,
               'lr': 0.01,
               'momentum': 0.9,
               'optimizer_name': 'Adam',
-              'num_hidden_layers': 10,
-              'hidden_layer_size': 128
+              'num_hidden_layers': 5,
+              'hidden_layer_size': 64,
+              'trial_id': int(time.time())
         }
     
-    ProbInference.train(config)
+    model = ProbInference.train(config)
     #runfile('./apps/regression/probability_inference.py', wdir='./')
