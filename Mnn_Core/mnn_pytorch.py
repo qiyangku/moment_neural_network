@@ -325,12 +325,8 @@ class Mnn_Layer_without_Rho(torch.nn.Module):
         super(Mnn_Layer_without_Rho, self).__init__()
         self.fc = Mnn_Linear_without_Corr(d_in, d_out)
         self.bn_mean = torch.nn.BatchNorm1d(d_out)
-        self.bn_mean.weight.data.fill_(1.2)
-        self.bn_mean.bias.data.fill_(3.0)
-
-        self.bn_std = torch.nn.BatchNorm1d(d_out)
-        self.bn_std.weight.data.fill_(1.2)
-        self.bn_std.bias.data.fill_(8)
+        self.bn_mean.weight.data.fill_(2.5)
+        self.bn_mean.bias.data.fill_(2.5)
 
         self.a1 = Mnn_Activate_Mean.apply
         self.a2 = Mnn_Activate_Std.apply
@@ -338,8 +334,7 @@ class Mnn_Layer_without_Rho(torch.nn.Module):
     def forward(self, ubar, sbar):
         ubar, sbar = self.fc(ubar, sbar)
         ubar = self.bn_mean(ubar)
-        sbar = self.bn_std(sbar)
-        sbar = F.relu(sbar)
+        sbar = mnn_std_bn1d(self.bn_mean, ubar, sbar)
         u = self.a1(ubar, sbar)
         s = self.a2(ubar, sbar, u)
         return u, s
@@ -358,10 +353,10 @@ def mnn_std_bn1d(module, mean, std):
 if __name__ == "__main__":
     batch = 2
     neuron = 2
-    u = torch.rand(batch, neuron)
+    u = torch.rand(batch, neuron) * 10
     s = torch.sqrt(u.clone())
     print(u, s, sep="\n")
-    bn = torch.nn.BatchNorm1d(neuron)
-    u = bn(u)
-    s = mnn_std_bn1d(bn, u, s)
+    bn = Mnn_Layer_without_Rho(2, 2)
+    u, s = bn(u, s)
+
     print(u, s, sep="\n")
