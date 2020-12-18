@@ -45,8 +45,11 @@ class Mnn_Linear_without_Corr(torch.nn.Module):
     def forward(self, input1: Tensor, input2: Tensor):
         ratio = mnn_core_func.get_ratio()
         # degree = mnn_core_func.get_degree()
-        out1 = F.linear(input1, self.weight, self.bias)*(1 - ratio)
-        out2 = F.linear(torch.pow(input2, 2), torch.pow(self.weight, 2), self.bias)*(1+np.power(ratio, 2))
+        out1 = F.linear(input1, self.weight, self.bias)
+        if self.bias is not None:
+            out2 = F.linear(torch.pow(input2, 2), torch.pow(self.weight, 2), torch.pow(self.bias, 2))
+        else:
+            out2 = F.linear(torch.pow(input2, 2), torch.pow(self.weight, 2), self.bias)
         out2 = torch.sqrt(out2)
         return out1, out2
 
@@ -140,6 +143,7 @@ class Mnn_Activate_Mean(torch.autograd.Function):
 
         # Todo Should remove flatten op to save time
         mean_out = torch.from_numpy(mean_out.reshape(shape))
+        # turn it to Float type
         ctx.save_for_backward(mean_in, std_in, mean_out)
         return mean_out
 
@@ -181,7 +185,6 @@ class Mnn_Activate_Std(torch.autograd.Function):
         std_out= mnn_core_func.forward_fast_std(clone_mean, clone_std, clone_mean_out)
         # Todo Should remove flatten op to save time
         std_out = torch.from_numpy(std_out.reshape(shape))
-
         ctx.save_for_backward(mean_in, std_in, mean_out, std_out)
         return std_out
 
@@ -317,17 +320,48 @@ class Mnn_Activate_Corr(torch.autograd.Function):
         return corr_grad_corr, corr_grad_mean, corr_grad_std, grad_mean_out, grad_std_out
 
 
+class Mnn_Layer_without_Rho(torch.nn.Module):
+    def __init__(self, d_in, d_out):
+        super(Mnn_Layer_without_Rho, self).__init__()
+        self.fc = Mnn_Linear_without_Corr(d_in, d_out)
+        self.bn_mean = torch.nn.BatchNorm1d(d_out)
+        self.bn_mean.weight.data.fill_(1.2)
+        self.bn_mean.bias.data.fill_(3.0)
+
+        self.bn_std = torch.nn.BatchNorm1d(d_out)
+        self.bn_std.weight.data.fill_(1.2)
+        self.bn_std.bias.data.fill_(8)
+
+        self.a1 = Mnn_Activate_Mean.apply
+        self.a2 = Mnn_Activate_Std.apply
+
+    def forward(self, ubar, sbar):
+        ubar, sbar = self.fc(ubar, sbar)
+        ubar = self.bn_mean(ubar)
+        sbar = self.bn_std(sbar)
+        sbar = F.relu(sbar)
+        u = self.a1(ubar, sbar)
+        s = self.a2(ubar, sbar, u)
+        return u, s
+
+
+def mnn_std_bn1d(module, mean, std):
+    assert type(module).__name__ == "BatchNorm1d"
+    weight = module.weight
+    if module.training:
+        std = std / torch.sqrt(torch.var(mean, 0, keepdim=True) + module.eps) * torch.abs(weight)
+    else:
+        std = std / torch.sqrt(module.running_var + module.eps) * torch.abs(weight)
+    return std
+
+
 if __name__ == "__main__":
-    neuron = 5
-    batch = 1
-
+    batch = 2
+    neuron = 2
     u = torch.rand(batch, neuron)
-    u.requires_grad = True
-    s = torch.abs(u.clone())
-    rho = torch.diag(torch.ones(neuron))
-    u1 = Mnn_Activate_Mean.apply(u, s)
-    s1 = Mnn_Activate_Std.apply(u, s, u1)
-    r1 = Mnn_Activate_Corr.apply(rho, u, s, u1, s1)
-
-    print(u1, s1, r1, sep="\n")
-    print(torch.var(u1))
+    s = torch.sqrt(u.clone())
+    print(u, s, sep="\n")
+    bn = torch.nn.BatchNorm1d(neuron)
+    u = bn(u)
+    s = mnn_std_bn1d(bn, u, s)
+    print(u, s, sep="\n")
