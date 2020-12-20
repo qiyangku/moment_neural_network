@@ -180,152 +180,221 @@ class Mnn_Auto_Encoder(nn.Module):
         return out
 
 
-def train_mnn_classic(model, criterion, optimizer, trainloader, model_name, epochs=10, log_interval=50):
-    print('----- Train Start -----')
-    count = 0
-    for epoch in range(epochs):
-        running_loss = 0.0
-        for step, (batch_x, batch_y) in enumerate(trainloader):
-            batch_x = batch_x.type(torch.float64)
+class Train_Cifar10_Model:
+    def __init__(self):
+        self.BATCH = 512
+        self.data_path = 'D:\Data_repos\Cifar10'
+        self.EPOCHS = 50
+        self.LR = 0.1
+        self.classes = ('plane', 'car', 'bird', 'cat',
+                   'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
 
-            output = model(batch_x)[0]
+    def train_mnn_classic(self, model, criterion, optimizer, trainloader, model_name, epochs=10, log_interval=50):
+        print('----- Train Start -----')
+        count = 0
+        for epoch in range(epochs):
+            running_loss = 0.0
+            for step, (batch_x, batch_y) in enumerate(trainloader):
+                batch_x = batch_x.type(torch.float64)
 
-            optimizer.zero_grad()
-            loss = criterion(output, batch_y)
-            loss.backward()
-            optimizer.step()
-            running_loss += loss.item()
-            if step % log_interval == (log_interval - 1):
-                print('[%d, %5d] loss: %.4f' %
-                      (epoch + 1, step + 1, running_loss / log_interval))
-                writer.add_scalar("loss/"+model_name, running_loss / log_interval, count)
-                running_loss = 0.0
-                correct = 0
-                total = 0
-                _, predict = torch.max(output.data, 1)
-                total += batch_y.size(0)
-                correct += (predict == batch_y).sum().item()
-                writer.add_scalar("accuracy/"+model_name, 100.0 * correct / total, count)
-                count += 1
-                print('Accuracy of the network on the %d tran images: %.3f %%' % (total, 100.0 * correct / total))
-    print('----- Train Finished -----')
+                output = model(batch_x)[0]
 
+                optimizer.zero_grad()
+                loss = criterion(output, batch_y)
+                loss.backward()
+                optimizer.step()
+                running_loss += loss.item()
+                if step % log_interval == (log_interval - 1):
+                    print('[%d, %5d] loss: %.4f' %
+                          (epoch + 1, step + 1, running_loss / log_interval))
+                    writer.add_scalar("loss/"+model_name, running_loss / log_interval, count)
+                    running_loss = 0.0
+                    correct = 0
+                    total = 0
+                    _, predict = torch.max(output.data, 1)
+                    total += batch_y.size(0)
+                    correct += (predict == batch_y).sum().item()
+                    writer.add_scalar("accuracy/"+model_name, 100.0 * correct / total, count)
+                    count += 1
+                    print('Accuracy of the network on the %d tran images: %.3f %%' % (total, 100.0 * correct / total))
+        print('----- Train Finished -----')
 
-def train_mnn_fc(model, criterion, optimizer, trainloader, model_name, epochs=10, log_interval=50):
-    print('----- Train Start -----')
-    count = 0
-    for epoch in range(epochs):
-        running_loss = 0.0
-        for step, (batch_x, batch_y) in enumerate(trainloader):
-            batch_x = batch_x.type(torch.float64)
-            batch_x = batch_x.view(-1, 3*32*32)
-            output = model(batch_x, torch.sqrt(torch.abs(batch_x.clone())))[0]
-            optimizer.zero_grad()
-            loss = criterion(output, batch_y)
-            loss.backward()
-            optimizer.step()
-            running_loss += loss.item()
-            if step % log_interval == (log_interval - 1):
-                print('[%d, %5d] loss: %.4f' %
-                      (epoch + 1, step + 1, running_loss / log_interval))
-                writer.add_scalar("loss/"+model_name, running_loss, count)
-                running_loss = 0.0
-                correct = 0
-                total = 0
-                _, predict = torch.max(output.data, 1)
-                total += batch_y.size(0)
-                correct += (predict == batch_y).sum().item()
-                writer.add_scalar("accuracy/"+model_name, 100.0 * correct / total, count)
-                count += 1
-                print('Accuracy of the network on the %d tran images: %.3f %%' % (total, 100.0 * correct / total))
-    print('----- Train Finished -----')
+    def train_mnn_fc(self, model, criterion, optimizer, trainloader, model_name, epochs=10, log_interval=50):
+        print('----- Train Start -----')
+        count = 0
+        for epoch in range(epochs):
+            running_loss = 0.0
+            for step, (batch_x, batch_y) in enumerate(trainloader):
+                batch_x = batch_x.type(torch.float64)
+                batch_x = batch_x.view(-1, 3*32*32)
+                output = model(batch_x, torch.sqrt(torch.abs(batch_x.clone())))[0]
+                optimizer.zero_grad()
+                loss = criterion(output, batch_y)
+                loss.backward()
+                optimizer.step()
+                running_loss += loss.item()
+                if step % log_interval == (log_interval - 1):
+                    print('[%d, %5d] loss: %.4f' %
+                          (epoch + 1, step + 1, running_loss / log_interval))
+                    writer.add_scalar("loss/"+model_name, running_loss / log_interval, count)
+                    running_loss = 0.0
+                    correct = 0
+                    total = 0
+                    _, predict = torch.max(output.data, 1)
+                    total += batch_y.size(0)
+                    correct += (predict == batch_y).sum().item()
+                    writer.add_scalar("accuracy/"+model_name, 100.0 * correct / total, count)
+                    count += 1
+                    print('Accuracy of the network on the %d tran images: %.3f %%' % (total, 100.0 * correct / total))
+        print('----- Train Finished -----')
 
+    def train_mnn_ae(self, model, criterion, optimizer, trainloader, model_name, epochs=10, log_interval=50):
+        print('----- Train Start -----')
+        count = 0
+        for epoch in range(epochs):
+            running_loss = 0.0
+            for step, (batch_x, batch_y) in enumerate(trainloader):
+                batch_x = batch_x.type(torch.float64)
+                flatten_x = batch_x.view(-1, 3*32*32)
+                output = model(flatten_x, torch.sqrt(torch.abs(flatten_x.clone())))
+                optimizer.zero_grad()
+                loss = criterion(output, batch_x)
+                loss.backward()
+                optimizer.step()
+                running_loss += loss.item()
+                if step % log_interval == (log_interval - 1):
+                    print('[%d, %5d] loss: %.4f' %
+                          (epoch + 1, step + 1, running_loss / log_interval))
+                    writer.add_scalar("loss/" + model_name, running_loss / log_interval, count)
+                    count += 1
+                    running_loss = 0.0
+        print('----- Train Finished -----')
 
-def train_mnn_ae(model, criterion, optimizer, trainloader, model_name, epochs=10, log_interval=50):
-    print('----- Train Start -----')
-    count = 0
-    for epoch in range(epochs):
-        running_loss = 0.0
-        for step, (batch_x, batch_y) in enumerate(trainloader):
-            flatten_x = batch_x.view(-1, 3*32*32)
-            output = model(flatten_x, torch.sqrt(torch.abs(flatten_x.clone())))
-            optimizer.zero_grad()
-            loss = criterion(output, batch_x)
-            loss.backward()
-            optimizer.step()
-            running_loss += loss.item()
-            if step % log_interval == (log_interval - 1):
-                print('[%d, %5d] loss: %.4f' %
-                      (epoch + 1, step + 1, running_loss / log_interval))
-                writer.add_scalar("loss/" + model_name, running_loss / log_interval, count)
-                count += 1
-                running_loss = 0.0
-    print('----- Train Finished -----')
+    def select_n(self, data, labels, start=10):
+        '''
+        Selects n random datapoints and their corresponding labels from a dataset
+        '''
+        assert len(data) == len(labels)
+        return data[start: start + 10], labels[start: start+10]
 
+    def test_classic(self, model, testloader, model_name="Mnn_classic"):
+        print('------ Test {} Start -----'.format(model_name))
 
-def select_n(data, labels, start=10):
-    '''
-    Selects n random datapoints and their corresponding labels from a dataset
-    '''
-    assert len(data) == len(labels)
-    return data[start: start + 10], labels[start: start+10]
+        correct = 0
+        total = 0
+
+        with torch.no_grad():
+            for test_x, test_y in testloader:
+                images, labels = test_x, test_y
+                images = images.type(torch.float64)
+                output = model(images)[0]
+                _, predicted = torch.max(output.data, 1)
+                total += labels.size(0)
+                correct += (predicted == labels).sum().item()
+
+        accuracy = 100 * correct / total
+        print("total samples: {:}, num of correct: {:}".format(total, correct))
+        print('Accuracy of the network is: %.4f %%' % accuracy)
+        return accuracy
+
+    def test_fc(self, model, testloader, model_name="Mnn_Fc"):
+        print('------ Test {:} Start -----'.format(model_name))
+        correct = 0
+        total = 0
+        with torch.no_grad():
+            for test_x, test_y in testloader:
+                images, labels = test_x, test_y
+                images = images.type(torch.float64)
+                images = images.view(-1, 3*32*32)
+                sbar = torch.sqrt(torch.abs(images.clone()))
+                output = model(images, sbar)[0]
+                _, predicted = torch.max(output.data, 1)
+                total += labels.size(0)
+                correct += (predicted == labels).sum().item()
+
+        accuracy = 100 * correct / total
+        print("total samples: {:}, num of correct: {:}".format(total, correct))
+        print('Accuracy of the network is: %.4f %%' % accuracy)
+        return accuracy
+
+    def train_model(self):
+        EPOCHS = self.EPOCHS
+        BATCH_SIZE = self.BATCH
+        data_path = self.data_path
+        LR = self.LR
+
+        transform_train = transforms.Compose([
+            transforms.ToTensor()
+        ])
+
+        trainset = torchvision.datasets.CIFAR10(
+            root=data_path,
+            train=True,
+            download=False,
+            transform=transform_train
+        )
+
+        trainloader = torch.utils.data.DataLoader(
+            trainset, batch_size=BATCH_SIZE, shuffle=True)
+
+        net = Mnn_Classic()
+        criterion = torch.nn.CrossEntropyLoss()
+        optimizer = torch.optim.Adam(net.parameters(), lr=LR)
+        self.train_mnn_classic(net, criterion, optimizer, trainloader, epochs=EPOCHS, model_name="Mnn_Classic")
+        torch.save(net, "mnn_classic.pt")
+
+        net = Mnn_FC()
+        criterion = torch.nn.CrossEntropyLoss()
+        optimizer = torch.optim.Adam(net.parameters(), lr=LR)
+        self.train_mnn_fc(net, criterion, optimizer, trainloader, epochs=EPOCHS, model_name="Mnn_FC")
+        torch.save(net, "mnn_fc.pt")
+
+        net = Mnn_Auto_Encoder()
+        criterion = torch.nn.BCELoss()
+        optimizer = torch.optim.Adam(net.parameters(), lr=LR)
+        self.train_mnn_ae(net, criterion, optimizer, trainloader, epochs=EPOCHS, model_name="Mnn_AE")
+        torch.save(net, "mnn_ae.pt")
+
+    def test_model(self):
+        BATCH_SIZE = self.BATCH
+        data_path = self.data_path
+        transform = transforms.Compose([
+            transforms.ToTensor()
+        ])
+        testset = torchvision.datasets.CIFAR10(
+            root=data_path,
+            train=False,
+            download=False,
+            transform=transform
+        )
+
+        trainset = torchvision.datasets.CIFAR10(
+            root=data_path,
+            train=True,
+            download=False,
+            transform=transform
+        )
+
+        trainloader = torch.utils.data.DataLoader(
+            trainset, batch_size=BATCH_SIZE, shuffle=True)
+
+        testloader = torch.utils.data.DataLoader(
+            testset, batch_size=BATCH_SIZE, shuffle=True)
+
+        # 类别标签
+
+        net = torch.load("mnn_classic.pt")
+        net.eval()
+        self.test_classic(net, trainloader)
+        self.test_classic(net, testloader)
+
+        net = torch.load("mnn_fc.pt")
+        net.eval()
+        self.test_fc(net, trainloader)
+        self.test_fc(net, testloader)
 
 
 if __name__ == "__main__":
-    mnn_core_func.print_params()
+    test = Train_Cifar10_Model()
+    test.test_model()
 
-    EPOCHS = 50
-    BATCH_SIZE = 512
-    data_path = 'D:\Data_repos\Cifar10'
-
-    transform_train = transforms.Compose([
-        transforms.ToTensor()
-    ])
-
-    trainset = torchvision.datasets.CIFAR10(
-        root=data_path,
-        train=True,
-        download=False,
-        transform=transform_train
-    )
-
-    trainloader = torch.utils.data.DataLoader(
-        trainset, batch_size=BATCH_SIZE, shuffle=True)
-
-    transform_test = transforms.Compose([
-        transforms.ToTensor(),
-    ])
-
-    testset = torchvision.datasets.CIFAR10(
-        root=data_path,
-        train=False,
-        download=False,
-        transform=transform_test
-    )
-
-    testloader = torch.utils.data.DataLoader(
-        testset, batch_size=BATCH_SIZE, shuffle=True)
-
-    # 类别标签
-    classes = ('plane', 'car', 'bird', 'cat',
-               'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
-
-    LR = 0.1
-
-    net = Mnn_Classic()
-    criterion = torch.nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(net.parameters(), lr=LR)
-    train_mnn_classic(net, criterion, optimizer, trainloader, epochs=EPOCHS, model_name="Mnn_Classic")
-    torch.save(net, "mnn_classic.pt")
-    
-    net = Mnn_FC()
-    criterion = torch.nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(net.parameters(), lr=LR)
-    train_mnn_fc(net, criterion, optimizer, trainloader, epochs=EPOCHS, model_name="Mnn_FC")
-    torch.save(net, "mnn_fc.pt")
-
-    net = Mnn_Auto_Encoder()
-    criterion = torch.nn.BCELoss()
-    optimizer = torch.optim.Adam(net.parameters(), lr=LR)
-    train_mnn_ae(net, criterion, optimizer, trainloader, epochs=EPOCHS, model_name="Mnn_AE")
-    torch.save(net, "mnn_ae.pt")
