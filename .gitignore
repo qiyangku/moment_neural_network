@@ -5,8 +5,5 @@ Mnn_Core/__pycache__/
 # Except this file
 !.gitignore
 *.pyc
-*.pyc
-Mnn_Core/__pycache__/mnn_pytorch.cpython-38.pyc
-Mnn_Core/__pycache__/mnn_utils.cpython-38.pyc
 *.iml
 *.0
