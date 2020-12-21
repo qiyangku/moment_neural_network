@@ -336,7 +336,7 @@ class Mnn_Std_Bn1d(torch.nn.Module):
 
     def mnn_std_bn1d(self, module, mean, std):
         assert type(module).__name__ == "BatchNorm1d"
-        if module.training:
+        if module.training or module.track_running_stats is False:
             std = torch.pow(std, 2) * torch.pow(module.weight, 2) / (torch.var(mean, dim=0, keepdim=True) + module.eps)
             if self.ext_bias is not None:
                 std += torch.pow(self.ext_bias, 2)

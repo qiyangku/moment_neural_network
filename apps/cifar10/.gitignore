@@ -1,0 +1,8 @@
+# Ignore everything in this directory
+*ipynb*/
+.virtual_documents/
+*.pt
+runs/
+__pycache__/
+# Except this file
+!.gitignore

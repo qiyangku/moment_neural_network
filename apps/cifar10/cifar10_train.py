@@ -31,13 +31,15 @@ class Mnn_Classic(torch.nn.Module):
         self.layer1 = Mnn_Layer_without_Rho(64 * 4 * 4, 64*4)
         self.layer2 = Mnn_Layer_without_Rho(64*4, 10)
         self.layer3 = Mnn_Linear_without_Corr(10, 10, bias=True)
+        self.add_noise = 0.0
+        self.mul_noise = 1.0
 
     def forward(self, x):
         x = self.conv1(x)
         x = self.conv2(x)
         x = self.conv3(x)
         x = x.view(-1, 64 * 4 * 4)
-        y = torch.sqrt(torch.abs(x.clone()))
+        y = torch.sqrt(torch.abs(x.clone()))*self.mul_noise + self.add_noise
         x, y = self.layer1(x, y)
         x, y = self.layer2(x, y)
         x, y = self.layer3(x, y)

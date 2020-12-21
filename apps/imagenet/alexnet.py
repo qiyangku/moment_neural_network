@@ -5,6 +5,7 @@ import torch.nn as nn
 from Mnn_Core.mnn_pytorch import *
 from torch.utils.tensorboard import SummaryWriter
 
+import json
 """
 AlexNet(
   (features): Sequential(
@@ -93,42 +94,94 @@ class Mnn_Alex_Net(nn.Module):
             nn.MaxPool2d(kernel_size=3, stride=2),
         )
         self.avgpool = nn.AdaptiveAvgPool2d((6, 6))
-        self.fc1 = Mnn_Linear_without_Corr(256 * 6 * 6, 2096, bias=True)
+        self.fc1 = Mnn_Linear_without_Corr(256 * 6 * 6, 4096, bias=True)
         self.fc2 = Mnn_Linear_without_Corr(4096, 4096, bias=True)
         self.fc3 = Mnn_Linear_without_Corr(4096, num_classes, bias=True)
         self.a1 = Mnn_Activate_Mean.apply
         self.a2 = Mnn_Activate_Std.apply
         self.dropout = nn.Dropout()
+        self.add_noise = 0.0
+        self.mul_noise = 1.0
+        self.scaling = 100
 
     def forward(self, x):
         x = self.features(x)
         x = self.avgpool(x)
-        y = torch.sqrt(torch.abs(x))
-
+        x = torch.flatten(x, 1)
         x = self.dropout(x)
-        temp = torch.zeros_like(y)
-        y = torch.where(x == 0, temp, y)
+        y = torch.sqrt(torch.abs(x)) * self.mul_noise + self.add_noise
         x, y = self.fc1(x, y)
         x_a = self.a1(x, y)
         y_a = self.a2(x, y, x_a)
-
+        x_a *= self.scaling
+        y_a *= self.scaling
+        temp = torch.zeros_like(y_a)
         x = self.dropout(x_a)
         y = torch.where(x == 0, temp, y_a)
         x, y = self.fc2(x, y)
         x_a = self.a1(x, y)
         y_a = self.a2(x, y, x_a)
+        x_a *= self.scaling
+        y_a *= self.scaling
         x, y = self.fc3(x_a, y_a)
         return x
 
 
-data_path = 'D:\Data_repos\Imagenet2012'
-model = torchvision.models.alexnet(pretrained=True)
-model.eval()
-preprocess = transforms.Compose([
-    transforms.Resize(256),
-    transforms.CenterCrop(224),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-])
-for name in model.state_dict():
-    print(name, type(model.state_dict()[name]))
+class Check_ImageNet_Model:
+    def __init__(self):
+        self.classes = None
+        self.BATCH = 10
+        self.LR = 0.1
+        self.data_path = 'D:\Data_repos\Imagenet2012'
+        self.get_imagenet_classes()
+        
+    def data_preprocess(self, split="val"):
+        data_path = self.data_path
+        preprocess = transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ])
+        val_set = torchvision.datasets.ImageNet(
+            root=data_path,
+            split=split,
+            transform=preprocess
+        )
+        val_loader = torch.utils.data.DataLoader(val_set, batch_size=self.BATCH, shuffle=True)
+        return val_set, val_loader
+
+    def test_raw(self, model, data_loader, stop=500):
+        correct = 0
+        total = 0
+        with torch.no_grad():
+            for test_x, test_y in data_loader:
+                test_x = test_x.type(torch.float64)
+                output = model(test_x)
+                _, predicted = torch.max(output.data, 1)
+                total += test_y.size(0)
+                correct += (predicted == test_y).sum().item()
+                if total >= stop:
+                    break
+    
+        accuracy = 100 * correct / total
+        print("total samples: {:}, num of correct: {:}".format(total, correct))
+        print('Top-1 Accuracy of the network is: %.4f %%' % accuracy)
+
+    def get_imagenet_classes(self, file_path="imagenet_class_index.json"):
+        file = open(file_path, 'r')
+        load_dict = json.load(file)
+        self.classes = list()
+        for i in range(1000):
+            self.classes.append(load_dict[str(i)][1])
+
+
+if __name__ == "__main__":
+    model = torchvision.models.alexnet(pretrained=True)
+    model.eval()
+    check = Mnn_Alex_Net()
+    check.load_state_dict(model.state_dict(), strict=False)
+    test = Check_ImageNet_Model()
+    dataset, dataloader = test.data_preprocess()
+    #test.test_raw(model, dataloader)
+    test.test_raw(check, dataloader)
