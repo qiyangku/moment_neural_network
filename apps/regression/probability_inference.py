@@ -11,41 +11,6 @@ torch.set_default_tensor_type(torch.DoubleTensor)
 #seed = 5
 #torch.manual_seed(seed)
 
-# class MomentLayer_no_corr(torch.nn.Module):
-#     def __init__(self, input_size, output_size):
-#         super(MomentLayer, self).__init__()
-#         '''Ignores correlation completely'''
-#         self.input_size = input_size
-#         self.output_size = output_size
-
-#         self.linear = Mnn_Linear_without_Corr(input_size, output_size)
-
-#         self.bn_mean = torch.nn.BatchNorm1d(output_size)
-#         self.bn_mean.weight.data.fill_(2.5)
-#         self.bn_mean.bias.data.fill_(2.5)
-#         #this roughly set the input mu in the range (0,5)
-
-#         self.bn_std = torch.nn.BatchNorm1d(output_size)
-#         self.bn_std.weight.data.fill_(2.5)
-#         self.bn_std.bias.data.fill_(10.0)        
-#         #intial bias for std should be large otherwise everything decays to zero.
-        
-#         #cache the output
-#         self.mean = 0
-#         self.std = 0
-#         self.corr = 0
-
-#         return
-
-#     def forward(self, u, s):
-#         u, s = self.linear.forward(u, s)
-#         u = self.bn_mean(u)
-#         s = self.bn_std(s)
-#         u_activated = Mnn_Activate_Mean.apply(u, s)
-#         s_activated = Mnn_Activate_Std.apply(u, s, u_activated)        
-#         return u_activated, s_activated
-
-
 class MomentLayer(torch.nn.Module):
     def __init__(self, input_size, output_size):
         super(MomentLayer, self).__init__()
@@ -59,32 +24,17 @@ class MomentLayer(torch.nn.Module):
         self.bn_mean.bias.data.fill_(2.5)
         #this roughly set the input mu in the range (0,5)
 
-        self.bn_std = torch.nn.BatchNorm1d(output_size)
-        self.bn_std.weight.data.fill_(2.5)
-        self.bn_std.bias.data.fill_(10.0)        
-        #intial bias for std should be large otherwise everything decays to zero.
-        
         #cache the output
         self.mean = 0
         self.std = 0
         self.corr = 0
 
         return
-    
-    def mybatchnorm(self, x, u):
-        gam = self.bn_mean.weight
         
-        if self.training:
-            y = x/torch.std(u, 0, keepdim = True)*torch.abs(gam)
-        else:
-            y = x/torch.sqrt(self.bn_mean.running_var)*torch.abs(gam)
-        return y
-    
     def forward(self, u, s, rho):
         u, s, rho = self.linear.forward(u, s, rho)
         
-        s = self.mybatchnorm(s, u)
-        #s = self.bn_std(s)
+        s = mnn_std_bn1d(self.bn_mean, u, s)
         u = self.bn_mean(u)
                 
         u_activated = Mnn_Activate_Mean.apply(u, s)
@@ -109,19 +59,18 @@ class MoNet(torch.nn.Module):
             u, s, rho = self.layers[i].forward(u, s, rho)
         return u, s, rho
 
-# class MoNet_no_corr(torch.nn.Module):
-#     def __init__(self):
-#         super(MoNet, self).__init__()
-#         self.layer_sizes = [2]+[128]*10+[1]  # input, hidden, output
-#         self.layers = torch.nn.ModuleList(
-#             [MomentLayer(self.layer_sizes[i], self.layer_sizes[i + 1]) for i in range(len(self.layer_sizes) - 1)])
+def target_fun(mu1,s1,mu2,s2,rho):
+    v1 = torch.pow(s1,2)
+    v2 = torch.pow(s2,2)
+    cov = s1*s2*rho    
+    det = v1 + v2 - 2*cov #determinant of the covariance matrix
+    
+    mu3 = ((v2 - cov)*mu1 + (v1-cov)*mu2)/det
+    s3 = (v1*v2*(1-torch.pow(rho,2)))/det
+    s3 = torch.pow(s3,0.5)
+    
+    return mu3, s3
 
-#         return
-
-#     def forward(self, u, s):
-#         for i in range(len(self.layer_sizes) - 1):
-#             u, s = self.layers[i].forward(u, s)
-#         return u, s
 
 class ProbInference():
     @staticmethod
@@ -130,20 +79,14 @@ class ProbInference():
         input_mean = 1 * torch.rand(batch_size, 2, num_batches) #NB: 0<min(input mean)< output mean < max(input mean)<1/Tref = 0.2
         input_mean[:,1,:] = 0.0 #fix one of the distributions to unit gaussian
         input_std = 2 * torch.rand(batch_size, 2, num_batches) + 1
-        input_std[:,1,:] = 1.0 #fix one of the distributions to unit gaussian    
+        input_std[:,1,:] = 1.0 #fix one of the distributions to unit gaussian
+        rho = 2*torch.rand(batch_size, 1, num_batches) - 1
+                
+        target_mean, target_std = target_fun( input_mean[:,0,:], input_std[:,0,:], input_mean[:,1,:], input_std[:,1,:], rho[:,0,:] )
         
-        fun1 = lambda mu1, mu2, v1, v2: (v2 * mu1 + v1 * mu2) / (v1 + v2)
-        fun2 = lambda v1, v2: v1 * v2 / (v1 + v2)
-    
-        v = input_std ** 2
-    
-        target_mean = fun1(input_mean[:,0,:], input_mean[:,1,:], v[:,0,:], v[:,1,:]).view(batch_size, 1, num_batches)
-        target_std = fun2(v[:, 0], v[:, 1]).pow(0.5).view(batch_size, 1, num_batches)
+        target_mean = target_mean.view(batch_size, 1, num_batches)
+        target_std = target_std.view(batch_size, 1, num_batches)
         
-        #transduction_factor = 0.1
-        #target_mean *= transduction_factor #scale to biological range
-        #target_std *= transduction_factor #scale to biological range
-            
         mean_scale = 1/(torch.max(target_mean)-torch.min(target_mean))*0.1
         mean_bias = - torch.min(target_mean)/(torch.max(target_mean)-torch.min(target_mean))*0.1+0.02
         std_scale = 1/(torch.max(target_std)-torch.min(target_std))*0.1
@@ -152,24 +95,24 @@ class ProbInference():
         target_mean = target_mean*mean_scale + mean_bias
         target_std = target_std*std_scale + std_bias
         
-        input_corr = (torch.eye(2) + (1-torch.eye(2))*0.1).unsqueeze(0).repeat(batch_size,1,1) #NB must be symmetric and positive definite
-        
+        input_corr = torch.zeros( batch_size, 2, 2, num_batches )
+        for i in range(batch_size): #not the most pythonic way of coding; but easier to read
+            for j in range(num_batches):
+                input_corr[i,:,:,j] = torch.eye(2) + (1-torch.eye(2))*rho[i,0,j]
+                
         target_corr = [] #to be added
             
         return (input_mean, input_std, input_corr), (target_mean, target_std, target_corr), (mean_scale, mean_bias, std_scale, std_bias)
     
     @staticmethod
-    def test_data(model):
+    def test_data(model, rho = 0.0):
         
         target_affine = model.target_affine
-        
-        fun1 = lambda mu1, mu2, v1, v2: (v2 * mu1 + v1 * mu2) / (v1 + v2)
-        fun2 = lambda v1, v2: v1 * v2 / (v1 + v2)
         
         mean = torch.linspace(0,1,10)
         model.eval()
         
-        input_corr = (torch.eye(2) + (1-torch.eye(2))*0.1).unsqueeze(0).repeat(100,1,1)
+        input_corr = (torch.eye(2) + (1-torch.eye(2))*rho).unsqueeze(0).repeat(100,1,1)
         
         fig1 = plt.figure()            
         ax1 = fig1.add_subplot(111)
@@ -178,16 +121,14 @@ class ProbInference():
             input_std = torch.linspace(1,3,100)
             input_mean = torch.ones(input_std.shape)*mean[i]
             
-            target_mean = fun1(input_mean, 0.0, input_std.pow(2), 1.0)
-            target_std = fun2(input_std.pow(2), 1.0).pow(0.5)
+            target_mean, target_std = target_fun( input_mean, input_std, torch.zeros(input_mean.shape), torch.ones(input_mean.shape), torch.ones(input_mean.shape)*input_corr[0,0,1] )
             
             input_mean2 = torch.zeros(100,2)
             input_mean2[:,0] = input_mean
             input_std2 = torch.ones(100,2)
             input_std2[:,0] = input_std
             
-            output_mean, output_std, output_corr = model.forward(input_mean2, input_std2, input_corr)
-            
+            output_mean, output_std, output_corr = model.forward(input_mean2, input_std2, input_corr)            
             
             target_mean = target_mean*target_affine[0] + target_affine[1]
             target_std = target_std*target_affine[2] + target_affine[3]
@@ -200,9 +141,8 @@ class ProbInference():
         for i in range(len(sigma)):
             input_mean = torch.linspace(0,1,100)
             input_std = torch.ones(input_mean.shape)*sigma[i]
-            
-            target_mean = fun1(input_mean, 0.0, input_std.pow(2), 1.0)
-            target_std = fun2(input_std.pow(2), 1.0).pow(0.5)
+                        
+            target_mean, target_std = target_fun( input_mean, input_std, torch.zeros(input_mean.shape), torch.ones(input_mean.shape), torch.ones(input_mean.shape)*input_corr[0,0,1] )
             
             input_mean2 = torch.zeros(100,2)
             input_mean2[:,0] = input_mean
@@ -220,7 +160,7 @@ class ProbInference():
         
         ax1.set_xlabel('Output mean')
         ax1.set_ylabel('Output std')
-        
+        ax1.set_title(r'$\rho=${}'.format(rho))
         
         return fig1
     
@@ -254,17 +194,14 @@ class ProbInference():
             scale = L.bn_mean.weight/torch.sqrt(L.bn_mean.running_var)
             w = L.linear.weight*(scale.unsqueeze(0).T)
             w = w.detach().numpy()
-            # print(bn.bias)
-            # print(bn.running_mean)
-            # print(bn.running_var)
             
             ax1 = fig_weight.add_subplot(3,4,i)        
-            img = ax1.imshow(w,vmax=10,vmin=-10, cmap = 'bwr')                
+            img = ax1.imshow(w,vmax=15,vmin=-15, cmap = 'bwr')                
             ax1.axis('off')
             ax1.set_title('Layer {}'.format(i))
             
             ax2 = fig_whist.add_subplot(3,4,i)
-            img2 = ax2.hist(w.flatten(),np.linspace(-10,10,31))
+            img2 = ax2.hist(w.flatten(),np.linspace(-15,15,31))
             ax2.set_title('Layer {}'.format(i))
             
         fig_weight.colorbar(img)
@@ -305,7 +242,7 @@ class ProbInference():
         for epoch in range(num_epoch):
             for j in range(num_batches):
                 optimizer.zero_grad()
-                u, s, rho = model.forward(train_input[0][:,:,j], train_input[1][:,:,j], train_input[2])
+                u, s, rho = model.forward(train_input[0][:,:,j], train_input[1][:,:,j], train_input[2][:,:,:,j])
                 loss = loss_function_mse(u, s, train_target[0][:,:,j], train_target[1][:,:,j])
                 loss.backward()
                 optimizer.step()
@@ -364,9 +301,9 @@ class ProbInference():
 
 if __name__ == "__main__":    
 
-    config = {'num_batches': 100,
-              'batch_size': 64,
-              'num_epoch': 30,
+    config = {'num_batches': 500,
+              'batch_size': 32,
+              'num_epoch': 100,
               'lr': 0.01,
               'momentum': 0.9,
               'optimizer_name': 'Adam',
