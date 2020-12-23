@@ -4,7 +4,7 @@ import torch
 import time
 import matplotlib.pyplot as plt
 from torch.utils.tensorboard import SummaryWriter
-from ray import tune
+#from ray import tune
 import json
 
 torch.set_default_tensor_type(torch.DoubleTensor)
@@ -23,7 +23,10 @@ class MomentLayer(torch.nn.Module):
         self.bn_mean.weight.data.fill_(2.5)
         self.bn_mean.bias.data.fill_(2.5)
         #this roughly set the input mu in the range (0,5)
-
+        
+        self.bn_std = Mnn_Std_Bn1d(output_size , bias = False)
+        #self.bn_std.ext_bias.data.fill_(1.0)
+        
         #cache the output
         self.mean = 0
         self.std = 0
@@ -34,7 +37,8 @@ class MomentLayer(torch.nn.Module):
     def forward(self, u, s, rho):
         u, s, rho = self.linear.forward(u, s, rho)
         
-        s = mnn_std_bn1d(self.bn_mean, u, s)
+        #s = mnn_std_bn1d(self.bn_mean, u, s)
+        s = self.bn_std.forward(self.bn_mean, u, s)
         u = self.bn_mean(u)
                 
         u_activated = Mnn_Activate_Mean.apply(u, s)
@@ -231,7 +235,7 @@ class ProbInference():
         params = model.parameters()
         
         if optimizer_name == 'Adam':
-            optimizer = torch.optim.Adam(params, lr = lr) #recommended lr: 0.1 (Adam requires a much smaller learning rate than SGD otherwise won't converge)
+            optimizer = torch.optim.Adam(params, lr = lr, amsgrad = True) #recommended lr: 0.1 (Adam requires a much smaller learning rate than SGD otherwise won't converge)
         elif optimizer_name == 'SGD':
             optimizer = torch.optim.SGD(params, lr= lr, momentum= momentum) #recommended lr: 2
         else:
@@ -301,7 +305,7 @@ class ProbInference():
 
 if __name__ == "__main__":    
 
-    config = {'num_batches': 500,
+    config = {'num_batches': 2000,
               'batch_size': 32,
               'num_epoch': 100,
               'lr': 0.01,
