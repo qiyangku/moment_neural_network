@@ -321,10 +321,10 @@ class Mnn_Activate_Corr(torch.autograd.Function):
 
 
 class Mnn_Std_Bn1d(torch.nn.Module):
-    def __init__(self, features:  int, bias=True):
+    def __init__(self, features:  int, ext_bias=True):
         super(Mnn_Std_Bn1d, self).__init__()
         self.features = features
-        if bias:
+        if ext_bias:
             self.ext_bias = Parameter(torch.Tensor(features))
         else:
             self.register_parameter('ext_bias', None)
@@ -334,22 +334,25 @@ class Mnn_Std_Bn1d(torch.nn.Module):
         if self.ext_bias is not None:
             init.uniform_(self.ext_bias, 2, 10)
 
-    def mnn_std_bn1d(self, module, mean, std):
+    def _mnn_std_bn1d(self, module, mean, std):
         assert type(module).__name__ == "BatchNorm1d"
-        if module.training or module.track_running_stats is False:
+        if module.training:
             std = torch.pow(std, 2) * torch.pow(module.weight, 2) / (torch.var(mean, dim=0, keepdim=True) + module.eps)
             if self.ext_bias is not None:
                 std += torch.pow(self.ext_bias, 2)
-            std = torch.sqrt(std)
         else:
-            std = torch.pow(std, 2) * torch.pow(module.weight, 2) / (module.running_var + module.eps)
+            if module.track_running_stats is True:
+                std = torch.pow(std, 2) * torch.pow(module.weight, 2) / (module.running_var + module.eps)
+            else:
+                std = torch.pow(std, 2) * torch.pow(module.weight, 2) / (
+                        torch.var(mean, dim=0, keepdim=True) + module.eps)
             if self.ext_bias is not None:
                 std += torch.pow(self.ext_bias, 2)
-            std = torch.sqrt(std)
+        std = torch.sqrt(std)
         return std
 
     def forward(self, module, mean, std):
-        return self.mnn_std_bn1d(module, mean, std)
+        return self._mnn_std_bn1d(module, mean, std)
 
 
 class Mnn_Layer_without_Rho(torch.nn.Module):
@@ -373,12 +376,4 @@ class Mnn_Layer_without_Rho(torch.nn.Module):
         return u, s
 
 
-if __name__ == "__main__":
-    batch = 2
-    neuron = 2
-    u = torch.rand(batch, neuron) * 10
-    s = torch.sqrt(u.clone())
-    print(u, s, sep="\n")
-    bn = Mnn_Layer_without_Rho(2, 2)
-    u, s = bn(u, s)
-    print(u, s, sep="\n")
+

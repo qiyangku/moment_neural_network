@@ -493,13 +493,3 @@ class Debug_Utils:
             fig.savefig(save)
         plt.show()
 
-
-if __name__ == "__main__":
-    func = Mnn_Core_Func()
-    ubar = np.linspace(-2, 2, 5)
-    sbar = np.sqrt(np.abs(ubar))
-    u = func.forward_fast_mean(ubar, sbar)
-    s = func.forward_fast_std(ubar, sbar, u)
-    ugu, ugs = func.backward_fast_mean(ubar, sbar, u)
-    sgu, sgs = func.backward_fast_std(ubar, sbar, u, s)
-    print(ugu, ugs, sgu, sgs, sep="\n")

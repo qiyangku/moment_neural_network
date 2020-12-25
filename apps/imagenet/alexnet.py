@@ -177,10 +177,12 @@ class Check_ImageNet_Model:
 
 
 if __name__ == "__main__":
+    mnn_core_func.t_ref = 0.0
     model = torchvision.models.alexnet(pretrained=True)
     model.eval()
     check = Mnn_Alex_Net()
     check.load_state_dict(model.state_dict(), strict=False)
+    check.scaling = 1.0
     test = Check_ImageNet_Model()
     dataset, dataloader = test.data_preprocess()
     #test.test_raw(model, dataloader)
