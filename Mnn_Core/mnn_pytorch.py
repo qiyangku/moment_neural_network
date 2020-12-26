@@ -43,8 +43,7 @@ class Mnn_Linear_without_Corr(torch.nn.Module):
             init.uniform_(self.bias, -bound, bound)
 
     def forward(self, input1: Tensor, input2: Tensor):
-        ratio = mnn_core_func.get_ratio()
-        # degree = mnn_core_func.get_degree()
+        assert input1.size() == input2.size()
         out1 = F.linear(input1, self.weight, self.bias)
         if self.bias is not None:
             out2 = F.linear(torch.pow(input2, 2), torch.pow(self.weight, 2), torch.pow(self.bias, 2))
@@ -84,6 +83,7 @@ class Mnn_Linear_Corr(torch.nn.Module):
             init.uniform_(self.bias, -bound, bound)
 
     def forward(self, mean_in: Tensor, std_in, corr_in: Tensor):
+        assert mean_in.size() == std_in.size()
         # ratio not used for std and corr
         ratio = mnn_core_func.get_ratio()
         mean_out = F.linear(mean_in, self.weight, self.bias) * (1 - ratio)
@@ -143,7 +143,7 @@ class Mnn_Activate_Mean(torch.autograd.Function):
 
         # Todo Should remove flatten op to save time
         mean_out = torch.from_numpy(mean_out.reshape(shape))
-        # turn it to Float type
+
         ctx.save_for_backward(mean_in, std_in, mean_out)
         return mean_out
 
@@ -182,7 +182,7 @@ class Mnn_Activate_Std(torch.autograd.Function):
         clone_std = clone_std.flatten()
         clone_mean_out = clone_mean_out.flatten()
 
-        std_out= mnn_core_func.forward_fast_std(clone_mean, clone_std, clone_mean_out)
+        std_out = mnn_core_func.forward_fast_std(clone_mean, clone_std, clone_mean_out)
         # Todo Should remove flatten op to save time
         std_out = torch.from_numpy(std_out.reshape(shape))
         ctx.save_for_backward(mean_in, std_in, mean_out, std_out)
@@ -334,8 +334,15 @@ class Mnn_Std_Bn1d(torch.nn.Module):
         if self.ext_bias is not None:
             init.uniform_(self.ext_bias, 2, 10)
 
+    def _check_input_dim(self, input):
+        if input.dim() != 2 and input.dim() != 3:
+            raise ValueError('expected 2D or 3D input (got {}D input)'
+                             .format(input.dim()))
+
     def _mnn_std_bn1d(self, module, mean, std):
         assert type(module).__name__ == "BatchNorm1d"
+        self._check_input_dim(mean)
+        assert mean.size() == std.size()
         if module.training:
             std = torch.pow(std, 2) * torch.pow(module.weight, 2) / (torch.var(mean, dim=0, keepdim=True) + module.eps)
             if self.ext_bias is not None:
@@ -368,6 +375,7 @@ class Mnn_Layer_without_Rho(torch.nn.Module):
         self.a2 = Mnn_Activate_Std.apply
 
     def forward(self, ubar, sbar):
+        assert ubar.size() == sbar.size()
         ubar, sbar = self.fc(ubar, sbar)
         uhat = self.bn_mean(ubar)
         shat = self.bn_std(self.bn_mean, ubar, sbar)
