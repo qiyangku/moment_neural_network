@@ -50,13 +50,53 @@ class MomentLayer(torch.nn.Module):
         
         return u_activated, s_activated, corr_activated
 
+class MomentLayer_no_corr(torch.nn.Module):
+    def __init__(self, input_size, output_size):
+        super(MomentLayer_no_corr, self).__init__()
+        self.input_size = input_size
+        self.output_size = output_size
+
+        self.linear = Mnn_Linear_without_Corr(input_size, output_size)
+
+        self.bn_mean = torch.nn.BatchNorm1d(output_size)
+        self.bn_mean.weight.data.fill_(2.5)
+        self.bn_mean.bias.data.fill_(2.5)
+        #this roughly set the input mu in the range (0,5)
+        
+        self.bn_std = Mnn_Std_Bn1d(output_size , bias = False)
+        #self.bn_std.ext_bias.data.fill_(1.0)
+        
+        #cache the output
+        self.mean = 0
+        self.std = 0
+        self.corr = 0
+
+        return
+        
+    def forward(self, u, s):
+        u, s = self.linear.forward(u, s)
+        
+        #s = mnn_std_bn1d(self.bn_mean, u, s)
+        s = self.bn_std.forward(self.bn_mean, u, s)
+        u = self.bn_mean(u)
+                
+        u_activated = Mnn_Activate_Mean.apply(u, s)
+        s_activated = Mnn_Activate_Std.apply(u, s, u_activated)        
+        
+        self.mean, self.std = u_activated, s_activated
+        
+        return u_activated, s_activated
+
+
 class MoNet(torch.nn.Module):
     def __init__(self, num_hidden_layers = 10, hidden_layer_size = 64):
         super(MoNet, self).__init__()
         self.layer_sizes = [2]+[hidden_layer_size]*num_hidden_layers+[1]  # input, hidden, output
+        
+        
         self.layers = torch.nn.ModuleList(
             [MomentLayer(self.layer_sizes[i], self.layer_sizes[i + 1]) for i in range(len(self.layer_sizes) - 1)])
-
+        
         return
 
     def forward(self, u, s, rho):
@@ -64,10 +104,24 @@ class MoNet(torch.nn.Module):
             u, s, rho = self.layers[i].forward(u, s, rho)
         return u, s, rho
 
+class MoNet_no_corr(torch.nn.Module):
+    def __init__(self, num_hidden_layers = 10, hidden_layer_size = 64):
+        super(MoNet_no_corr, self).__init__()
+        self.layer_sizes = [2]+[hidden_layer_size]*num_hidden_layers+[1]  # input, hidden, output
+        
+        self.layers = torch.nn.ModuleList(
+            [MomentLayer_no_corr(self.layer_sizes[i], self.layer_sizes[i + 1]) for i in range(len(self.layer_sizes) - 1)])
+        return
+
+    def forward(self, u, s):
+        for i in range(len(self.layer_sizes) - 1):
+            u, s = self.layers[i].forward(u, s)
+        return u, s
+
+
 class MultilayerPerceptron():
     @staticmethod
-    def train(config):
-        
+    def train(config):        
         if config['tensorboard']:
             writer = SummaryWriter(comment = str(config['trial_id']))#log_dir='D:\\mnn_py\\moment_activation\\runs2'
         
@@ -78,16 +132,19 @@ class MultilayerPerceptron():
         momentum = config['momentum'] #0.9
         optimizer_name = config['optimizer_name']
         
-        model = MoNet(num_hidden_layers = config['num_hidden_layers'], hidden_layer_size = config['hidden_layer_size'])
-        
-        #train_input, train_target, target_affine = ProbInference.synthetic_data(num_batches = num_batches, batch_size = batch_size)
-        train_dataset = Dataset('cue_combo', sample_size = num_batches*batch_size, input_dim = 2, output_dim = 1)        
-        train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size = batch_size)
-        
+        if config['with_corr']:
+            model = MoNet(num_hidden_layers = config['num_hidden_layers'], hidden_layer_size = config['hidden_layer_size'])                    
+        else:
+            model = MoNet_no_corr(num_hidden_layers = config['num_hidden_layers'], hidden_layer_size = config['hidden_layer_size'])        
+            
+        train_dataset = Dataset(config['dataset_name'], sample_size = num_batches*batch_size, input_dim = 2, output_dim = 1, with_corr = config['with_corr'])        
+        train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size = batch_size)        
+    
         model.target_transform = train_dataset.transform
         
-        validation_dataset = Dataset('cue_combo', sample_size = 32, input_dim = 2, output_dim = 1, transform = train_dataset.transform)
+        validation_dataset = Dataset(config['dataset_name'], sample_size = 32, input_dim = 2, output_dim = 1, transform = train_dataset.transform, with_corr = config['with_corr'])        
         validation_dataloader = torch.utils.data.DataLoader(validation_dataset, batch_size = 32)
+            
         
         #model.target_affine = target_affine
         
@@ -111,7 +168,10 @@ class MultilayerPerceptron():
             #--- iterate ver minibatches
             for i_batch, sample in enumerate(train_dataloader):
                 optimizer.zero_grad()                
-                u, s, rho = model.forward(sample['input_data'][0], sample['input_data'][1], sample['input_data'][2])
+                if config['with_corr']:
+                    u, s, rho = model.forward(sample['input_data'][0], sample['input_data'][1], sample['input_data'][2])
+                else:
+                    u, s = model.forward(sample['input_data'][0], sample['input_data'][1])
                 loss = loss_function_mse(u, s, sample['target_data'][0], sample['target_data'][1])
                 loss.backward()
                 optimizer.step()
@@ -128,7 +188,10 @@ class MultilayerPerceptron():
                 with torch.no_grad():
                     model.eval()
                     for i_batch, sample in enumerate(validation_dataloader):
-                        u, s, rho = model.forward(sample['input_data'][0], sample['input_data'][1], sample['input_data'][2])
+                        if config['with_corr']:
+                            u, s, rho = model.forward(sample['input_data'][0], sample['input_data'][1], sample['input_data'][2])
+                        else:
+                            u, s = model.forward(sample['input_data'][0], sample['input_data'][1])
                         loss = loss_function_mse(u, s, sample['target_data'][0], sample['target_data'][1])
                     if config['tensorboard']:
                         writer.add_scalar("Loss/Validation", loss, epoch)
@@ -165,7 +228,7 @@ class MultilayerPerceptron():
             
             writer.add_figure('Final output vs target',fig)
             
-            fig1 = VisualizationTools.plot_grid_map(model)
+            fig1 = VisualizationTools.plot_grid_map(model, with_corr = config['with_corr'])
             writer.add_figure('Test data grid map',fig1)
             
             writer.flush()
@@ -180,16 +243,18 @@ class MultilayerPerceptron():
 
 if __name__ == "__main__":    
 
-    config = {'num_batches': 100,
+    config = {'num_batches': 2000,
               'batch_size': 32,
-              'num_epoch': 20,
+              'num_epoch': 100,
               'lr': 0.01,
               'momentum': 0.9,
               'optimizer_name': 'Adam',
-              'num_hidden_layers': 5,
+              'num_hidden_layers': 3,
               'hidden_layer_size': 32,
               'trial_id': int(time.time()),
-              'tensorboard': True
+              'tensorboard': True,
+              'with_corr': False,
+              'dataset_name': 'cue_combo'
         }
     
     model = MultilayerPerceptron.train(config)

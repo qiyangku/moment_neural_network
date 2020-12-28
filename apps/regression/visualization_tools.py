@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 
 class VisualizationTools():
     @staticmethod
-    def plot_grid_map(model, rho = 0.0):        
+    def plot_grid_map(model, rho = 0.0, with_corr = True):        
         mean = torch.linspace(0,1,10)
         model.eval()
         
@@ -30,8 +30,10 @@ class VisualizationTools():
             input_std2 = torch.ones(100,2)
             input_std2[:,0] = input_std
             
-            output_mean, output_std, output_corr = model.forward(input_mean2, input_std2, input_corr)            
-            
+            if with_corr:
+                output_mean, output_std, output_corr = model.forward(input_mean2, input_std2, input_corr)            
+            else:
+                output_mean, output_std = model.forward(input_mean2, input_std2)            
             #target_mean = target_mean*target_affine[0] + target_affine[1]
             #target_std = target_std*target_affine[2] + target_affine[3]
             target_mean, target_std = model.target_transform( target_mean, target_std )         
@@ -52,8 +54,10 @@ class VisualizationTools():
             input_std2 = torch.ones(100,2)
             input_std2[:,0] = input_std
             
-            
-            output_mean, output_std, output_corr = model.forward(input_mean2, input_std2, input_corr)        
+            if with_corr:
+                output_mean, output_std, output_corr = model.forward(input_mean2, input_std2, input_corr)            
+            else:
+                output_mean, output_std = model.forward(input_mean2, input_std2) 
             
             target_mean, target_std = model.target_transform( target_mean, target_std )  
             

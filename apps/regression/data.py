@@ -20,7 +20,7 @@ def prod_normal(mu1,s1,mu2,s2,rho):
 
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, dataset_name, sample_size = 10, input_dim = 1, output_dim = 1, transform = None):
+    def __init__(self, dataset_name, sample_size = 10, input_dim = 1, output_dim = 1, transform = None, with_corr = True):
         """
         Args:
             dataset_name (string): name of the dataset
@@ -31,10 +31,8 @@ class Dataset(torch.utils.data.Dataset):
         """
         self.sample_size = sample_size
         self.transform = transform
-        if dataset_name == 'cue_combo_no_corr':
-            self.cue_combination(with_corr= False)
-        elif dataset_name == 'cue_combo':
-            self.cue_combination(with_corr= True)        
+        if dataset_name == 'cue_combo':            
+            self.cue_combination(with_corr = with_corr)
         else:
             pass
                 
