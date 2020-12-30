@@ -132,10 +132,10 @@ class Mnn_Dropout(torch.nn.Module):
         return mean, std
 
 
-class Mnn_Std_AvgPool2d(torch.nn.Module):
+class Mnn_AvgPool2d(torch.nn.Module):
     def __init__(self, kernel_size, stride=None, padding=0, ceil_mode=False,
                  count_include_pad=True, divisor_override=None):
-        super(Mnn_Std_AvgPool2d, self).__init__()
+        super(Mnn_AvgPool2d, self).__init__()
         self.kernel_size = kernel_size
         self.stride = stride if (stride is not None) else kernel_size
         self.padding = padding
@@ -156,4 +156,35 @@ class Mnn_Std_AvgPool2d(torch.nn.Module):
                            self.ceil_mode, self.count_include_pad, self.divisor_override)
         std = torch.sqrt(std / (self.kernel_size ** 2))
         return mean, std
+
+
+class Mnn_MaxPool2d(torch.nn.Module):
+    def __init__(self, kernel_size: int, stride=None, padding=0, dilation=1, ceil_mode=False):
+        super(Mnn_MaxPool2d, self).__init__()
+        self.kernel_size = kernel_size
+        self.stride = stride if (stride is not None) else kernel_size
+        self.padding = padding
+        self.dilation = dilation
+        self.return_indices = True
+        self.ceil_mode = ceil_mode
+
+    def extra_repr(self) -> str:
+        return 'kernel_size={kernel_size}, stride={stride}, padding={padding}' \
+               ', dilation={dilation}, ceil_mode={ceil_mode}'.format(**self.__dict__)
+
+    def forward(self, mean: Tensor, std: Tensor):
+        assert mean.dim() == 4
+        assert mean.size() == std.size()
+        mean, indices = F.max_pool2d(mean, self.kernel_size, self.stride,
+                                     self.padding, self.dilation, self.ceil_mode,
+                                     self.return_indices)
+        N, C, H, W = indices.size()
+        temp_std = torch.zeros_like(mean)
+        for n in range(N):
+            for c in range(C):
+                for h in range(H):
+                    for w in range(W):
+                        p = indices[n, c, h, w].item()
+                        temp_std[n, c, h, w] = std[n, c, p//std.size()[2], p % std.size()[3]]
+        return mean, temp_std
 
