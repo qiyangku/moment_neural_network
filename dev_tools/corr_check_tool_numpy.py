@@ -73,7 +73,7 @@ def gradcheck_mnn_corr(inputs):
     u_new[:,0] += du
     mean_out_new = mnn_core_func.forward_fast_mean(u_new, s)
     std_out_new = mnn_core_func.forward_fast_std(u_new, s, mean_out_new)
-    chi_out_new = mnn_core_func.forward_fast_chi(u, s , mean_out_new, std_out_new)
+    chi_out_new = mnn_core_func.forward_fast_chi(u_new, s , mean_out_new, std_out_new)
     y_new = chi_out_new[:,0]*chi_out_new[:,1]*r
     
     #numeric_grad
