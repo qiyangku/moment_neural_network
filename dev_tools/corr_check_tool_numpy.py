@@ -10,12 +10,12 @@ from Mnn_Core.mnn_pytorch import *
 
 maf = MomentActivation()
 
-def gradcheck_numpy(N = 100):
+def gradcheck_numpy(inputs):
     
-    r = np.random.rand(N)*2-1 #scalar random corr
+    r = inputs[2]#np.random.rand(N)*2-1 #scalar random corr
     
-    u = np.random.randn(N,2) #mean
-    s = np.random.rand(N,2)+1 #std
+    u = inputs[0]#np.random.randn(N,2) #mean
+    s = inputs[1]#np.random.rand(N,2)+1 #std
     
      
     #base forward
@@ -51,13 +51,13 @@ def gradcheck_numpy(N = 100):
         
     return numeric_grad, analytic_grad
 
-def gradcheck_mnn_corr(N = 100):
+def gradcheck_mnn_corr(inputs):
     #repeat the same test with maf from mnn_corr to make sure maf is correctly implemented
     
-    r = np.random.rand(N)*2-1 #scalar random corr
+    r = inputs[2]#np.random.rand(N)*2-1 #scalar random corr
     
-    u = np.random.randn(N,2) #mean
-    s = np.random.rand(N,2)+1 #std
+    u = inputs[0]#np.random.randn(N,2) #mean
+    s = inputs[1]#np.random.rand(N,2)+1 #std
     
      
     #base forward
@@ -89,12 +89,20 @@ def gradcheck_mnn_corr(N = 100):
         
     
 if __name__=='__main__':
-    numeric_grad, analytic_grad = gradcheck_numpy(3)    
-    print(numeric_grad)
-    print(analytic_grad)
-    numeric_grad, analytic_grad = gradcheck_mnn_corr(3)
-    print(numeric_grad)
-    print(analytic_grad)
+    
+    N = 3
+    r = np.random.rand(N)*2-1 #scalar random corr    
+    u = np.random.randn(N,2) #mean
+    s = np.random.rand(N,2)+1 #std    
+    
+    
+    numeric_grad, analytic_grad = gradcheck_numpy((u,s,r))    
+    print('Numeric grad using maf:\n',numeric_grad)
+    print('Analytic grad using maf:\n',analytic_grad)
+    
+    numeric_grad, analytic_grad = gradcheck_mnn_corr((u,s,r))    
+    print('Numeric grad using mnn_corr_func:\n',numeric_grad)
+    print('Analytic grad using mnn_corr_func:\n',analytic_grad)
     
     #rel_err = np.abs((analytic_grad - numeric_grad)/numeric_grad)
     #plt.hist(rel_err)
