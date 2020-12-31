@@ -228,7 +228,7 @@ class MultilayerPerceptron():
             
             writer.add_figure('Final output vs target',fig)
             
-            fig1 = VisualizationTools.plot_grid_map(model, with_corr = config['with_corr'])
+            fig1 = VisualizationTools.plot_grid_map(model, with_corr = config['with_corr'], rho = config['fixed_rho'])
             writer.add_figure('Test data grid map',fig1)
             
             writer.flush()
@@ -243,7 +243,7 @@ class MultilayerPerceptron():
 
 if __name__ == "__main__":    
 
-    config = {'num_batches': 2000,
+    config = {'num_batches': 6000,
               'batch_size': 32,
               'num_epoch': 100,
               'lr': 0.01,
@@ -253,8 +253,9 @@ if __name__ == "__main__":
               'hidden_layer_size': 32,
               'trial_id': int(time.time()),
               'tensorboard': True,
-              'with_corr': False,
-              'dataset_name': 'cue_combo'
+              'with_corr': True,
+              'dataset_name': 'cue_combo',
+              'fixed_rho': -0.1 #ignored if with_corr = False
         }
     
     model = MultilayerPerceptron.train(config)

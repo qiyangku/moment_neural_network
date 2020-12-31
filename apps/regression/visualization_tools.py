@@ -10,9 +10,12 @@ import matplotlib.pyplot as plt
 
 class VisualizationTools():
     @staticmethod
-    def plot_grid_map(model, rho = 0.0, with_corr = True):        
+    def plot_grid_map(model, rho = None, with_corr = True):        
         mean = torch.linspace(0,1,10)
         model.eval()
+        
+        if not rho:
+            rho = 0.0
         
         input_corr = (torch.eye(2) + (1-torch.eye(2))*rho).unsqueeze(0).repeat(100,1,1)
         

@@ -20,7 +20,7 @@ def prod_normal(mu1,s1,mu2,s2,rho):
 
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, dataset_name, sample_size = 10, input_dim = 1, output_dim = 1, transform = None, with_corr = True):
+    def __init__(self, dataset_name, sample_size = 10, input_dim = 1, output_dim = 1, transform = None, with_corr = True, fixed_rho = None):
         """
         Args:
             dataset_name (string): name of the dataset
@@ -31,7 +31,8 @@ class Dataset(torch.utils.data.Dataset):
         """
         self.sample_size = sample_size
         self.transform = transform
-        if dataset_name == 'cue_combo':            
+        self.fixed_rho = fixed_rho
+        if dataset_name == 'cue_combo':          
             self.cue_combination(with_corr = with_corr)
         else:
             pass
@@ -54,9 +55,14 @@ class Dataset(torch.utils.data.Dataset):
         input_std[:,1] = 1.0 #fix one of the distributions to unit gaussian
         
         if with_corr:
-            rho = 2*torch.rand(self.sample_size) - 1
+            if self.fixed_rho:
+                rho = torch.ones(self.sample_size)*fixed_rho
+            else:
+                rho = 2*torch.rand(self.sample_size) - 1
         else:
             rho = torch.zeros(self.sample_size)
+            if fixed_rho:
+                print('Warning: correlation has been set to zero.')
                         
         input_corr = torch.zeros(self.sample_size, 2, 2)
         for i in range(self.sample_size): #not the most pythonic way of coding; but easier to read
