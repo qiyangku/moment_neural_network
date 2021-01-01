@@ -323,22 +323,6 @@ class Mnn_Activate_Corr(torch.autograd.Function):
         return corr_grad_corr, corr_grad_mean, corr_grad_std, grad_mean_out, grad_std_out
 
 
-<<<<<<< Updated upstream
-if __name__ == "__main__":
-    neuron = 5
-    batch = 1
-
-    u = torch.rand(batch, neuron)
-    u.requires_grad = True
-    s = torch.abs(u.clone())
-    rho = torch.diag(torch.ones(neuron))
-    u1 = Mnn_Activate_Mean.apply(u, s)
-    s1 = Mnn_Activate_Std.apply(u, s, u1)
-    r1 = Mnn_Activate_Corr.apply(rho, u, s, u1, s1)
-
-    print(u1, s1, r1, sep="\n")
-    print(torch.var(u1))
-=======
 class Mnn_Std_Bn1d(torch.nn.Module):
     def __init__(self, features:  int, bias=True):
         super(Mnn_Std_Bn1d, self).__init__()
@@ -392,4 +376,3 @@ class Mnn_Layer_without_Rho(torch.nn.Module):
         return u, s
 
 
->>>>>>> Stashed changes

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import torch.nn.functional as F
 import numpy as np
-from Mnn_Core import fast_dawson_v2 as fast_dawson
+from Mnn_Core import fast_dawson
 import matplotlib.pyplot as plt
 import palettable
 
