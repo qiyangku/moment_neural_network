@@ -145,6 +145,8 @@ class Mnn_Activate_Mean(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
+        # Now that it will only return the gradient of activation function
+        grad_output = torch.zeros_like(grad_output) + 1
         mean_in, std_in, mean_out = ctx.saved_tensors
         clone_std_in = std_in.clone().detach().numpy()
         clone_mean_out = mean_out.clone().detach().numpy()
@@ -187,6 +189,9 @@ class Mnn_Activate_Std(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
+        # Now that it will only return the gradient of activation function
+        grad_output = torch.zeros_like(grad_output) + 1
+
         mean_in, std_in, mean_out, std_out = ctx.saved_tensors
         clone_mean_in = mean_in.clone().detach().numpy()
         clone_std_in = std_in.clone().detach().numpy()
@@ -264,7 +269,10 @@ class Mnn_Activate_Corr(torch.autograd.Function):
 
     # require  the gradient of corr_in, mean_bn_in,  std_bn_in
     @staticmethod
-    def backward(ctx, grad_out):
+    def backward(ctx, grad_output):
+        # Now that it will only return the gradient of activation function
+        grad_output = torch.zeros_like(grad_output) + 1
+
         corr_in, mean_in, std_in, mean_out, func_chi = ctx.saved_tensors
         clone_mean_in = mean_in.clone().detach().numpy()
         clone_std_in = std_in.clone().detach().numpy()
@@ -283,17 +291,19 @@ class Mnn_Activate_Corr(torch.autograd.Function):
         chi_grad_mean = torch.from_numpy(chi_grad_mean.reshape(shape))
         chi_grad_std = torch.from_numpy(chi_grad_std.reshape(shape))
 
-        temp_corr_grad = torch.mul(grad_out, corr_in)
+        temp_corr_grad = torch.mul(grad_output, corr_in)
+        dim = grad_output.size()[-1]
+        temp = torch.ones(dim, dim) - torch.diag(torch.ones(dim))
+        temp_corr_grad = torch.mul(temp_corr_grad, temp)
 
         if temp_corr_grad.dim() == 2:  # one sample case
             temp_corr_grad = torch.mm(func_chi.view(1, -1), temp_corr_grad)
         else:
             temp_corr_grad = torch.bmm(func_chi.view(func_chi.size()[0], 1, -1), temp_corr_grad)
         # reshape the size from (batch, 1, feature) to (batch, feature)
-        temp_corr_grad = 2 * temp_corr_grad.view(temp_corr_grad.size()[0], -1)
 
-        corr_grad_mean = chi_grad_mean * temp_corr_grad
-        corr_grad_std = chi_grad_std * temp_corr_grad
+        corr_grad_mean = 2 * chi_grad_mean * temp_corr_grad
+        corr_grad_std = 2 * chi_grad_std * temp_corr_grad
 
         if func_chi.dim() == 1:
             temp_func_chi = func_chi.view(1, -1)
@@ -302,21 +312,18 @@ class Mnn_Activate_Corr(torch.autograd.Function):
             temp_func_chi = func_chi.view(func_chi.size()[0], 1, -1)
             chi_matrix = torch.bmm(temp_func_chi.transpose(-2, -1), temp_func_chi)
 
-        corr_grad_corr = 2 * torch.mul(chi_matrix, grad_out)
+        corr_grad_corr = torch.mul(chi_matrix, grad_output)
         # set the diagonal element of corr_grad_corr to 0
-        if corr_grad_corr.dim() != 2:
-            for i in range(corr_grad_corr.size()[0]):
-                for j in range(corr_grad_corr.size()[1]):
-                    corr_grad_corr[i, j, j] = 0.0
-        else:
-            for i in range(corr_grad_corr.size()[0]):
-                corr_grad_corr[i, i] = 0.0
 
+        dim = grad_output.size()[-1]
+        temp = torch.ones(dim, dim) - torch.diag(torch.ones(dim))
+        corr_grad_corr = torch.mul(corr_grad_corr, temp)
         grad_mean_out = torch.zeros_like(mean_out)
         grad_std_out = torch.zeros_like(mean_out)
         return corr_grad_corr, corr_grad_mean, corr_grad_std, grad_mean_out, grad_std_out
 
 
+<<<<<<< Updated upstream
 if __name__ == "__main__":
     neuron = 5
     batch = 1
@@ -331,3 +338,58 @@ if __name__ == "__main__":
 
     print(u1, s1, r1, sep="\n")
     print(torch.var(u1))
+=======
+class Mnn_Std_Bn1d(torch.nn.Module):
+    def __init__(self, features:  int, bias=True):
+        super(Mnn_Std_Bn1d, self).__init__()
+        self.features = features
+        if bias:
+            self.ext_bias = Parameter(torch.Tensor(features))
+        else:
+            self.register_parameter('ext_bias', None)
+        self.reset_parameters()
+
+    def reset_parameters(self) -> None:
+        if self.ext_bias is not None:
+            init.uniform_(self.ext_bias, 2, 10)
+
+    def mnn_std_bn1d(self, module, mean, std):
+        assert type(module).__name__ == "BatchNorm1d"
+        if module.training:
+            std = torch.pow(std, 2) * torch.pow(module.weight, 2) / (torch.var(mean, dim=0, keepdim=True) + module.eps)
+            if self.ext_bias is not None:
+                std += torch.pow(self.ext_bias, 2)
+            std = torch.sqrt(std)
+        else:
+            std = torch.pow(std, 2) * torch.pow(module.weight, 2) / (module.running_var + module.eps)
+            if self.ext_bias is not None:
+                std += torch.pow(self.ext_bias, 2)
+            std = torch.sqrt(std)
+        return std
+
+    def forward(self, module, mean, std):
+        return self.mnn_std_bn1d(module, mean, std)
+
+
+class Mnn_Layer_without_Rho(torch.nn.Module):
+    def __init__(self, d_in, d_out, bias=False):
+        super(Mnn_Layer_without_Rho, self).__init__()
+        self.fc = Mnn_Linear_without_Corr(d_in, d_out, bias=bias)
+        self.bn_mean = torch.nn.BatchNorm1d(d_out)
+        self.bn_mean.weight.data.fill_(2.5)
+        self.bn_mean.bias.data.fill_(2.5)
+
+        self.bn_std = Mnn_Std_Bn1d(d_out)
+        self.a1 = Mnn_Activate_Mean.apply
+        self.a2 = Mnn_Activate_Std.apply
+
+    def forward(self, ubar, sbar):
+        ubar, sbar = self.fc(ubar, sbar)
+        uhat = self.bn_mean(ubar)
+        shat = self.bn_std(self.bn_mean, ubar, sbar)
+        u = self.a1(uhat, shat)
+        s = self.a2(uhat, shat, u)
+        return u, s
+
+
+>>>>>>> Stashed changes
