@@ -90,9 +90,9 @@ class MomentLayer_no_corr(torch.nn.Module):
 
 
 class MoNet(torch.nn.Module):
-    def __init__(self, num_hidden_layers = 10, hidden_layer_size = 64):
+    def __init__(self, num_hidden_layers = 10, hidden_layer_size = 64, input_size = 2, output_size = 1):
         super(MoNet, self).__init__()
-        self.layer_sizes = [2]+[hidden_layer_size]*num_hidden_layers+[1]  # input, hidden, output
+        self.layer_sizes = [input_size]+[hidden_layer_size]*num_hidden_layers+[output_size]  # input, hidden, output
         
         
         self.layers = torch.nn.ModuleList(
@@ -106,9 +106,9 @@ class MoNet(torch.nn.Module):
         return u, s, rho
 
 class MoNet_no_corr(torch.nn.Module):
-    def __init__(self, num_hidden_layers = 10, hidden_layer_size = 64):
+    def __init__(self, num_hidden_layers = 10, hidden_layer_size = 64, input_size = 2, output_size = 1):
         super(MoNet_no_corr, self).__init__()
-        self.layer_sizes = [2]+[hidden_layer_size]*num_hidden_layers+[1]  # input, hidden, output
+        self.layer_sizes = [input_size]+[hidden_layer_size]*num_hidden_layers+[output_size]  # input, hidden, output
         
         self.layers = torch.nn.ModuleList(
             [MomentLayer_no_corr(self.layer_sizes[i], self.layer_sizes[i + 1]) for i in range(len(self.layer_sizes) - 1)])
@@ -132,13 +132,15 @@ class MultilayerPerceptron():
         lr = config['lr']#0.01
         momentum = config['momentum'] #0.9
         optimizer_name = config['optimizer_name']
+        input_size = config['input_size']
+        output_size = config['output_size']
         
         if config['with_corr']:
-            model = MoNet(num_hidden_layers = config['num_hidden_layers'], hidden_layer_size = config['hidden_layer_size'])                    
+            model = MoNet(num_hidden_layers = config['num_hidden_layers'], hidden_layer_size = config['hidden_layer_size'], input_size = input_size, output_size = output_size)
         else:
-            model = MoNet_no_corr(num_hidden_layers = config['num_hidden_layers'], hidden_layer_size = config['hidden_layer_size'])        
+            model = MoNet_no_corr(num_hidden_layers = config['num_hidden_layers'], hidden_layer_size = config['hidden_layer_size'], input_size = input_size, output_size = output_size)        
             
-        train_dataset = Dataset(config['dataset_name'], sample_size = num_batches*batch_size, input_dim = 2, output_dim = 1, with_corr = config['with_corr'], fixed_rho = config['fixed_rho'] )        
+        train_dataset = Dataset(config['dataset_name'], sample_size = num_batches*batch_size, input_dim = 2, output_dim = 1, with_corr = config['with_corr'], fixed_rho = config['fixed_rho'])
         train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size = batch_size)        
     
         model.target_transform = train_dataset.transform
@@ -244,13 +246,15 @@ class MultilayerPerceptron():
 
 if __name__ == "__main__":    
 
-    config = {'num_batches': 2000,
+    config = {'num_batches': 1000,
               'batch_size': 32,
               'num_epoch': 30,
               'lr': 0.01,
               'momentum': 0.9,
               'optimizer_name': 'Adam',
               'num_hidden_layers': 3,
+              'input_size': 2,
+              'output_size': 1,
               'hidden_layer_size': 32,
               'trial_id': int(time.time()),
               'tensorboard': True,
