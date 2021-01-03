@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Created on Thu Dec 31 21:01:40 2020
-Simple gradcheck for corr map with base numpy version
+Gradcheck for corr map using a simple 2d example
 @author: dell
 """
 
