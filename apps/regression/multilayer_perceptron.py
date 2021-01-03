@@ -1,3 +1,4 @@
+#from Mnn_Core.mnn_pytorch import *
 from Mnn_Core.mnn_pytorch import *
 import numpy as np
 import torch
@@ -137,12 +138,12 @@ class MultilayerPerceptron():
         else:
             model = MoNet_no_corr(num_hidden_layers = config['num_hidden_layers'], hidden_layer_size = config['hidden_layer_size'])        
             
-        train_dataset = Dataset(config['dataset_name'], sample_size = num_batches*batch_size, input_dim = 2, output_dim = 1, with_corr = config['with_corr'])        
+        train_dataset = Dataset(config['dataset_name'], sample_size = num_batches*batch_size, input_dim = 2, output_dim = 1, with_corr = config['with_corr'], fixed_rho = config['fixed_rho'] )        
         train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size = batch_size)        
     
         model.target_transform = train_dataset.transform
         
-        validation_dataset = Dataset(config['dataset_name'], sample_size = 32, input_dim = 2, output_dim = 1, transform = train_dataset.transform, with_corr = config['with_corr'])        
+        validation_dataset = Dataset(config['dataset_name'], sample_size = 32, input_dim = 2, output_dim = 1, transform = train_dataset.transform, with_corr = config['with_corr'], fixed_rho = config['fixed_rho'] )          
         validation_dataloader = torch.utils.data.DataLoader(validation_dataset, batch_size = 32)
             
         
@@ -243,9 +244,9 @@ class MultilayerPerceptron():
 
 if __name__ == "__main__":    
 
-    config = {'num_batches': 6000,
+    config = {'num_batches': 2000,
               'batch_size': 32,
-              'num_epoch': 100,
+              'num_epoch': 30,
               'lr': 0.01,
               'momentum': 0.9,
               'optimizer_name': 'Adam',
@@ -255,7 +256,7 @@ if __name__ == "__main__":
               'tensorboard': True,
               'with_corr': True,
               'dataset_name': 'cue_combo',
-              'fixed_rho': -0.1 #ignored if with_corr = False
+              'fixed_rho': 0.6 #ignored if with_corr = False
         }
     
     model = MultilayerPerceptron.train(config)

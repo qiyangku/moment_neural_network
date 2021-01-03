@@ -56,12 +56,12 @@ class Dataset(torch.utils.data.Dataset):
         
         if with_corr:
             if self.fixed_rho:
-                rho = torch.ones(self.sample_size)*fixed_rho
+                rho = torch.ones(self.sample_size)*self.fixed_rho
             else:
                 rho = 2*torch.rand(self.sample_size) - 1
         else:
             rho = torch.zeros(self.sample_size)
-            if fixed_rho:
+            if self.fixed_rho:
                 print('Warning: correlation has been set to zero.')
                         
         input_corr = torch.zeros(self.sample_size, 2, 2)
