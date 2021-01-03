@@ -285,7 +285,10 @@ class Mnn_Activate_Corr(torch.autograd.Function):
                                                                       clone_mean_out, clone_func_chi)
         chi_grad_mean = torch.from_numpy(chi_grad_mean.reshape(shape))
         chi_grad_std = torch.from_numpy(chi_grad_std.reshape(shape))
-
+        
+        for i in range(corr_in.shape[0]):
+            corr_in[i,:,:] *= 1-torch.eye(corr_in.shape[1])
+        
         temp_corr_grad = torch.mul(grad_out, corr_in)
 
         if temp_corr_grad.dim() == 2:  # one sample case
@@ -305,7 +308,8 @@ class Mnn_Activate_Corr(torch.autograd.Function):
             temp_func_chi = func_chi.view(func_chi.size()[0], 1, -1)
             chi_matrix = torch.bmm(temp_func_chi.transpose(-2, -1), temp_func_chi)
 
-        corr_grad_corr = 2 * torch.mul(chi_matrix, grad_out)
+        #corr_grad_corr = 2 * torch.mul(chi_matrix, grad_out)
+        corr_grad_corr = torch.mul(chi_matrix, grad_out)
         # set the diagonal element of corr_grad_corr to 0
         if corr_grad_corr.dim() != 2:
             for i in range(corr_grad_corr.size()[0]):
