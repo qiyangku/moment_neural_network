@@ -32,8 +32,12 @@ class Dataset(torch.utils.data.Dataset):
         self.sample_size = sample_size
         self.transform = transform
         self.fixed_rho = fixed_rho
+        self.input_dim = input_dim
+        self.output_dim = output_dim
         if dataset_name == 'cue_combo':          
             self.cue_combination(with_corr = with_corr)
+        elif dataset_name == 'synfire':
+            self.synfire()
         else:
             pass
                 
@@ -85,7 +89,34 @@ class Dataset(torch.utils.data.Dataset):
         self.target_data = list(zip(target_mean.unsqueeze(1), target_std.unsqueeze(1), target_corr))
         
         return
+    
+    def synfire(self):
         
+        input_mean = torch.zeros(self.sample_size, self.input_dim)
+        input_std = torch.zeros(self.sample_size, self.input_dim)
+        input_corr = torch.zeros(self.sample_size, self.input_dim, self.input_dim)
+        
+        target_mean = torch.zeros(self.sample_size, self.output_dim)
+        target_std = torch.zeros(self.sample_size, self.output_dim)
+        target_corr = torch.zeros(self.sample_size, self.output_dim, self.output_dim)
+        
+        patch = torch.zeros(self.input_dim)        
+        patch[:int(self.input_dim/4)] = 1.0        
+        patch_2d = torch.eye(self.input_dim)
+        patch_2d[:int(self.input_dim/4), :int(self.input_dim/4)] = self.fixed_rho
+        patch_2d.fill_diagonal_(1.0)
+        
+        for i in range(self.sample_size):
+            rand_shift = int(torch.randint(self.input_dim, (1,)))
+            input_mean[i,:] = patch.roll( rand_shift )*2.0 #randomly shifting the location of the patch
+            input_std[i,:] = patch.roll( rand_shift)*5.0
+            target_mean[i,:] = patch.roll( rand_shift )*0.1
+            target_std[i,:] = patch.roll( rand_shift)*0.1
+            target_corr[i,:,:] = patch_2d.roll( (rand_shift,rand_shift) , (0,1))
+        
+        self.input_data = list(zip(input_mean, input_std, input_corr))
+        self.target_data = list(zip(target_mean, target_std, target_corr))
+        return
 
 if __name__ == "__main__":    
     dataset = Dataset('cue_combo')   

@@ -13,6 +13,15 @@ torch.set_default_tensor_type(torch.DoubleTensor)
 #seed = 5
 #torch.manual_seed(seed)
 
+def loss_mse_covariance(pred_mean, pred_std, pred_corr, target_mean, target_std, target_corr):
+    loss1 = F.mse_loss(pred_mean, target_mean)
+    pred_cov = pred_std.unsqueeze(1)*pred_corr*pred_std.unsqueeze(2)
+    target_cov = target_std.unsqueeze(1)*target_corr*target_std.unsqueeze(2)
+    loss2 = F.l1_loss(pred_cov, target_cov)
+    #loss2 = F.mse_loss(pred_std, target_std)
+    return loss1 + loss2
+
+
 class MomentLayer(torch.nn.Module):
     def __init__(self, input_size, output_size):
         super(MomentLayer, self).__init__()
@@ -124,7 +133,7 @@ class MultilayerPerceptron():
     @staticmethod
     def train(config):        
         if config['tensorboard']:
-            writer = SummaryWriter(comment = str(config['trial_id']))#log_dir='D:\\mnn_py\\moment_activation\\runs2'
+            writer = SummaryWriter(log_dir = config['log_dir'] + '_'+ str(config['trial_id']))#log_dir='D:\\mnn_py\\moment_activation\\runs2'
         
         num_batches = config['num_batches'] #500#20 need more data to train well
         batch_size = config['batch_size'] #64
@@ -140,12 +149,12 @@ class MultilayerPerceptron():
         else:
             model = MoNet_no_corr(num_hidden_layers = config['num_hidden_layers'], hidden_layer_size = config['hidden_layer_size'], input_size = input_size, output_size = output_size)        
             
-        train_dataset = Dataset(config['dataset_name'], sample_size = num_batches*batch_size, input_dim = 2, output_dim = 1, with_corr = config['with_corr'], fixed_rho = config['fixed_rho'])
+        train_dataset = Dataset(config['dataset_name'], sample_size = num_batches*batch_size, input_dim = input_size, output_dim = output_size, with_corr = config['with_corr'], fixed_rho = config['fixed_rho'])
         train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size = batch_size)        
     
         model.target_transform = train_dataset.transform
         
-        validation_dataset = Dataset(config['dataset_name'], sample_size = 32, input_dim = 2, output_dim = 1, transform = train_dataset.transform, with_corr = config['with_corr'], fixed_rho = config['fixed_rho'] )          
+        validation_dataset = Dataset(config['dataset_name'], sample_size = 32, input_dim = input_size, output_dim = output_size, transform = train_dataset.transform, with_corr = config['with_corr'], fixed_rho = config['fixed_rho'] )          
         validation_dataloader = torch.utils.data.DataLoader(validation_dataset, batch_size = 32)
             
         
@@ -175,7 +184,11 @@ class MultilayerPerceptron():
                     u, s, rho = model.forward(sample['input_data'][0], sample['input_data'][1], sample['input_data'][2])
                 else:
                     u, s = model.forward(sample['input_data'][0], sample['input_data'][1])
-                loss = loss_function_mse(u, s, sample['target_data'][0], sample['target_data'][1])
+                
+                if config['loss'] == 'mse_no_corr':
+                    loss = loss_function_mse(u, s, sample['target_data'][0], sample['target_data'][1])
+                elif config['loss'] == 'mse_covariance':
+                    loss = loss_mse_covariance(u, s, rho, sample['target_data'][0], sample['target_data'][1], sample['target_data'][2])
                 loss.backward()
                 optimizer.step()
             #--- 
@@ -222,17 +235,20 @@ class MultilayerPerceptron():
         
         #writer.add_graph(model, (input_mean,input_std))
         if config['tensorboard']:
-            fig, ax1 = plt.subplots(nrows=1, ncols=1)
-            l1, = ax1.plot(u.detach().numpy(),s.detach().numpy(),'+')
-            l2, = ax1.plot(sample['target_data'][0].detach().numpy(), sample['target_data'][1].detach().numpy(),'.')
-            ax1.set_xlabel('Mean')
-            ax1.set_ylabel('Std')
-            plt.legend([l1,l2],['Output','Target'])    
+            if config['dataset_name'] == 'cue_combo':
+                fig, ax1 = plt.subplots(nrows=1, ncols=1)
+                l1, = ax1.plot(u.detach().numpy(),s.detach().numpy(),'+')
+                l2, = ax1.plot(sample['target_data'][0].detach().numpy(), sample['target_data'][1].detach().numpy(),'.')
+                ax1.set_xlabel('Mean')
+                ax1.set_ylabel('Std')
+                plt.legend([l1,l2],['Output','Target'])    
+                
+                writer.add_figure('Final output vs target',fig)            
             
-            writer.add_figure('Final output vs target',fig)
-            
-            fig1 = VisualizationTools.plot_grid_map(model, with_corr = config['with_corr'], rho = config['fixed_rho'])
-            writer.add_figure('Test data grid map',fig1)
+                fig1 = VisualizationTools.plot_grid_map(model, with_corr = config['with_corr'], rho = config['fixed_rho'])
+                writer.add_figure('Test data grid map',fig1)
+            else:
+                pass
             
             writer.flush()
             writer.close()
@@ -246,9 +262,9 @@ class MultilayerPerceptron():
 
 if __name__ == "__main__":    
 
-    config = {'num_batches': 1000,
+    config = {'num_batches': 2000,
               'batch_size': 32,
-              'num_epoch': 30,
+              'num_epoch': 50,
               'lr': 0.01,
               'momentum': 0.9,
               'optimizer_name': 'Adam',
@@ -258,8 +274,10 @@ if __name__ == "__main__":
               'hidden_layer_size': 32,
               'trial_id': int(time.time()),
               'tensorboard': True,
+              'log_dir': 'runs/inference',
               'with_corr': True,
               'dataset_name': 'cue_combo',
+              'loss':'mse_no_corr',
               'fixed_rho': 0.6 #ignored if with_corr = False
         }
     
