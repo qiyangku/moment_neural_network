@@ -5,6 +5,7 @@ Created on Mon Dec 28 22:26:28 2020
 @author: dell
 """
 import torch
+import numpy as np
 from apps.regression.data import prod_normal
 import matplotlib.pyplot as plt
 
@@ -75,7 +76,8 @@ class VisualizationTools():
     
     @staticmethod
     def plot_corr(model):
-        fig_corr = plt.figure()            
+        fig_corr = plt.figure()    
+        fig_chist = plt.figure()        
         i=0
         for L in model.layers:
             i+=1
@@ -85,6 +87,11 @@ class VisualizationTools():
             img = ax1.imshow(L.corr[0].detach().numpy(),vmax=1,vmin=-1,cmap = 'bwr')
             ax1.axis('off')
             ax1.set_title('Layer {}'.format(i))
+            
+            ax2 = fig_chist.add_subplot(3,4,i)
+            img2 = ax2.hist(L.corr[0].detach().numpy().flatten(),np.linspace(-1,1,31))
+            ax2.set_title('Layer {}'.format(i))
+            
         fig_corr.colorbar(img)
         return fig_corr
                 
@@ -105,13 +112,37 @@ class VisualizationTools():
             w = w.detach().numpy()
             
             ax1 = fig_weight.add_subplot(3,4,i)        
-            img = ax1.imshow(w,vmax=15,vmin=-15, cmap = 'bwr')                
+            img = ax1.imshow(w,vmax=50,vmin=-50, cmap = 'bwr')                
             ax1.axis('off')
             ax1.set_title('Layer {}'.format(i))
             
             ax2 = fig_whist.add_subplot(3,4,i)
-            img2 = ax2.hist(w.flatten(),np.linspace(-15,15,31))
+            img2 = ax2.hist(w.flatten(),np.linspace(-50,50,31))
             ax2.set_title('Layer {}'.format(i))
             
         fig_weight.colorbar(img)
         return fig_weight
+    
+    @staticmethod
+    def plot_bias(model):
+        fig_bias = plt.figure()        
+        i=0
+        for L in model.layers:
+            i+=1
+            if i > len(model.layers)-1:
+                break
+            
+            
+            #scale weight based on bn_mean (what about bn_std?)
+            bias = L.bn_mean.bias - L.bn_mean.running_mean*L.bn_mean.weight/torch.sqrt(L.bn_mean.running_var)
+            bias = bias.detach().numpy()
+            
+            ax1 = fig_bias.add_subplot(3,4,i)        
+            img = ax1.bar( np.arange(bias.size) , bias )                
+            #ax1.axis('off')
+            ax1.set_title('Layer {}'.format(i))
+            ax1.set_xlabel('Neuron index')
+            ax1.set_ylabel('Ext. Input Current')
+        
+        return fig_bias
+        
