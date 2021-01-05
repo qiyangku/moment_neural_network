@@ -62,7 +62,7 @@ class Dataset(torch.utils.data.Dataset):
             if self.fixed_rho:
                 rho = torch.ones(self.sample_size)*self.fixed_rho
             else:
-                rho = 2*torch.rand(self.sample_size) - 1
+                rho = (2*torch.rand(self.sample_size) - 1)*0.5
         else:
             rho = torch.zeros(self.sample_size)
             if self.fixed_rho:
@@ -110,6 +110,8 @@ class Dataset(torch.utils.data.Dataset):
             rand_shift = int(torch.randint(self.input_dim, (1,)))
             input_mean[i,:] = patch.roll( rand_shift )*2.0 #randomly shifting the location of the patch
             input_std[i,:] = patch.roll( rand_shift)*5.0
+            input_corr[i,:,:] = patch_2d.roll( (rand_shift,rand_shift) , (0,1))
+            
             target_mean[i,:] = patch.roll( rand_shift )*0.1
             target_std[i,:] = patch.roll( rand_shift)*0.1
             target_corr[i,:,:] = patch_2d.roll( (rand_shift,rand_shift) , (0,1))

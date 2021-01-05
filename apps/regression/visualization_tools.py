@@ -81,8 +81,8 @@ class VisualizationTools():
         i=0
         for L in model.layers:
             i+=1
-            if i > len(model.layers)-1:
-                break
+            #if i > len(model.layers)-1:
+            #    break
             ax1 = fig_corr.add_subplot(3,4,i)
             img = ax1.imshow(L.corr[0].detach().numpy(),vmax=1,vmin=-1,cmap = 'bwr')
             ax1.axis('off')

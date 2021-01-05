@@ -13,13 +13,16 @@ torch.set_default_tensor_type(torch.DoubleTensor)
 #seed = 5
 #torch.manual_seed(seed)
 
-def loss_mse_covariance(pred_mean, pred_std, pred_corr, target_mean, target_std, target_corr):
-    loss1 = F.mse_loss(pred_mean, target_mean)
+def loss_mse_covariance(pred_mean, pred_std, pred_corr, target_mean, target_std, target_corr, cov_only = False):    
     pred_cov = pred_std.unsqueeze(1)*pred_corr*pred_std.unsqueeze(2)
     target_cov = target_std.unsqueeze(1)*target_corr*target_std.unsqueeze(2)
     loss2 = F.l1_loss(pred_cov, target_cov)
     #loss2 = F.mse_loss(pred_std, target_std)
-    return loss1 + loss2
+    if cov_only: #do not constraint mean activity
+        loss = loss2
+    else:        
+        loss = loss2 + F.mse_loss(pred_mean, target_mean)
+    return loss
 
 
 class MomentLayer(torch.nn.Module):
@@ -262,9 +265,9 @@ class MultilayerPerceptron():
 
 if __name__ == "__main__":    
 
-    config = {'num_batches': 2000,
+    config = {'num_batches': 6000,
               'batch_size': 32,
-              'num_epoch': 50,
+              'num_epoch': 100,
               'lr': 0.01,
               'momentum': 0.9,
               'optimizer_name': 'Adam',
@@ -278,7 +281,7 @@ if __name__ == "__main__":
               'with_corr': True,
               'dataset_name': 'cue_combo',
               'loss':'mse_no_corr',
-              'fixed_rho': 0.6 #ignored if with_corr = False
+              'fixed_rho': None #ignored if with_corr = False
         }
     
     model = MultilayerPerceptron.train(config)
