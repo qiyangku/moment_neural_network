@@ -25,114 +25,151 @@ def loss_mse_covariance(pred_mean, pred_std, pred_corr, target_mean, target_std,
     return loss
 
 
-class MomentLayer(torch.nn.Module):
+class MomentLayerRecurrent(torch.nn.Module):
     def __init__(self, input_size, output_size):
-        super(MomentLayer, self).__init__()
+        super(MomentLayerRecurrent, self).__init__()
         self.input_size = input_size
         self.output_size = output_size
-
-        self.linear = Mnn_Linear_Corr(input_size, output_size)
-
+        
+        #recurrent input
+        self.linear = Mnn_Linear_Corr(output_size, output_size)
+        self.linear_ext = Mnn_Linear_without_Corr(output_size, output_size)
+        
         self.bn_mean = torch.nn.BatchNorm1d(output_size)
         self.bn_mean.weight.data.fill_(2.5)
-        self.bn_mean.bias.data.fill_(2.5)
-        #this roughly set the input mu in the range (0,5)
+        self.bn_mean.bias.data.fill_(2.5)        
+        self.bn_std = Mnn_Std_Bn1d(output_size , bias = False)        
         
-        self.bn_std = Mnn_Std_Bn1d(output_size , bias = False)
-        #self.bn_std.ext_bias.data.fill_(1.0)
+        #external input        
+        #self.ext_input = Mnn_Linear_Corr(input_size, output_size)
+
+        self.bn_mean_ext = torch.nn.BatchNorm1d(output_size)
+        self.bn_mean_ext.weight.data.fill_(2.5)
+        self.bn_mean_ext.bias.data.fill_(2.5)        
+        self.bn_std_ext = Mnn_Std_Bn1d(output_size , bias = False)
         
-        #cache the output
-        self.mean = 0
-        self.std = 0
-        self.corr = 0
+        #cache the output (do this for every time step)
+        self.mean = []
+        self.std = []
+        self.corr = []
 
         return
         
-    def forward(self, u, s, rho):
-        u, s, rho = self.linear.forward(u, s, rho)
+    def forward(self, u, s, rho, u_ext, s_ext, seq_len):
         
-        #s = mnn_std_bn1d(self.bn_mean, u, s)
-        s = self.bn_std.forward(self.bn_mean, u, s)
-        u = self.bn_mean(u)
+        #external
+        u_ext = u_ext.clone().detach()
+        s_ext = s_ext.clone().detach()
+        
+        u_ext, s_ext = self.linear_ext.forward(u_ext, s_ext) #comment out if transforming the external input is not needed.
                 
-        u_activated = Mnn_Activate_Mean.apply(u, s)
-        s_activated = Mnn_Activate_Std.apply(u, s, u_activated)        
-        corr_activated = Mnn_Activate_Corr.apply( rho , u, s, u_activated, s_activated)
+        s_ext = self.bn_std_ext.forward(self.bn_mean_ext, u_ext, s_ext)
+        u_ext = self.bn_mean_ext(u_ext)
         
-        self.mean, self.std, self.corr = u_activated, s_activated, corr_activated
+        if not self.training: #cache result only for validation phase            
+            self.mean = torch.zeros( (seq_len, u.shape[0], self.output_size ) )
+            self.std = torch.zeros( (seq_len, u.shape[0], self.output_size ) )
+            self.corr = torch.zeros( (seq_len, u.shape[0], self.output_size, self.output_size ))
+        
+        for i in range(seq_len):
+            #recurrent
+            u, s, rho = self.linear.forward(u, s, rho)        
+            s = self.bn_std.forward(self.bn_mean, u, s)
+            u = self.bn_mean(u)
+            
+            #combine recurrent and external
+            u = u + u_ext
+            s = torch.sqrt( s*s + s_ext*s_ext )
+            #rho is unaffected if external input is uncorrelated (proof?)
+            
+            u_activated = Mnn_Activate_Mean.apply(u, s)
+            s_activated = Mnn_Activate_Std.apply(u, s, u_activated)        
+            corr_activated = Mnn_Activate_Corr.apply( rho , u, s, u_activated, s_activated)
+            
+            u = u_activated
+            s = s_activated
+            rho = corr_activated
+            
+            if not self.training:
+                self.mean[i], self.std[i], self.corr[i] = u_activated, s_activated, corr_activated
         
         return u_activated, s_activated, corr_activated
 
-class MomentLayer_no_corr(torch.nn.Module):
-    def __init__(self, input_size, output_size):
-        super(MomentLayer_no_corr, self).__init__()
-        self.input_size = input_size
-        self.output_size = output_size
+# class MomentLayerRecurrent_no_corr(torch.nn.Module):
+#     def __init__(self, input_size, output_size):
+#         super(MomentLayer_no_corr, self).__init__()
+#         self.input_size = input_size
+#         self.output_size = output_size
 
-        self.linear = Mnn_Linear_without_Corr(input_size, output_size)
+#         self.linear = Mnn_Linear_without_Corr(input_size, output_size)
 
-        self.bn_mean = torch.nn.BatchNorm1d(output_size)
-        self.bn_mean.weight.data.fill_(2.5)
-        self.bn_mean.bias.data.fill_(2.5)
-        #this roughly set the input mu in the range (0,5)
+#         self.bn_mean = torch.nn.BatchNorm1d(output_size)
+#         self.bn_mean.weight.data.fill_(2.5)
+#         self.bn_mean.bias.data.fill_(2.5)
+#         #this roughly set the input mu in the range (0,5)
         
-        self.bn_std = Mnn_Std_Bn1d(output_size , bias = False)
-        #self.bn_std.ext_bias.data.fill_(1.0)
+#         self.bn_std = Mnn_Std_Bn1d(output_size , bias = False)
+#         #self.bn_std.ext_bias.data.fill_(1.0)
         
-        #cache the output
-        self.mean = 0
-        self.std = 0
-        self.corr = 0
+#         #cache the output
+#         self.mean = 0
+#         self.std = 0
+#         self.corr = 0
 
-        return
+#         return
         
-    def forward(self, u, s):
-        u, s = self.linear.forward(u, s)
+#     def forward(self, u, s):
+#         u, s = self.linear.forward(u, s)
         
-        #s = mnn_std_bn1d(self.bn_mean, u, s)
-        s = self.bn_std.forward(self.bn_mean, u, s)
-        u = self.bn_mean(u)
+#         #s = mnn_std_bn1d(self.bn_mean, u, s)
+#         s = self.bn_std.forward(self.bn_mean, u, s)
+#         u = self.bn_mean(u)
                 
-        u_activated = Mnn_Activate_Mean.apply(u, s)
-        s_activated = Mnn_Activate_Std.apply(u, s, u_activated)        
+#         u_activated = Mnn_Activate_Mean.apply(u, s)
+#         s_activated = Mnn_Activate_Std.apply(u, s, u_activated)        
         
-        self.mean, self.std = u_activated, s_activated
+#         self.mean, self.std = u_activated, s_activated
         
-        return u_activated, s_activated
+#         return u_activated, s_activated
 
 
-class MoNet(torch.nn.Module):
-    def __init__(self, num_hidden_layers = 10, hidden_layer_size = 64, input_size = 2, output_size = 1):
-        super(MoNet, self).__init__()
-        self.layer_sizes = [input_size]+[hidden_layer_size]*num_hidden_layers+[output_size]  # input, hidden, output
+class Renoir(torch.nn.Module):
+    def __init__(self, max_time_steps = 10, hidden_layer_size = 64, input_size = 2, output_size = 1):
+        super(Renoir, self).__init__()
         
+        #self.layer_sizes = [input_size]+[hidden_layer_size]+[output_size]  # input, hidden, output
         
-        self.layers = torch.nn.ModuleList(
-            [MomentLayer(self.layer_sizes[i], self.layer_sizes[i + 1]) for i in range(len(self.layer_sizes) - 1)])
-        
+        self.max_time_steps = max_time_steps
+        self.recurrent_layer = MomentLayerRecurrent(input_size, hidden_layer_size)
+                
+        #self.layers = torch.nn.ModuleList( [input_layer] + [recurrent_layer] )
+                
         return
 
-    def forward(self, u, s, rho):
-        for i in range(len(self.layer_sizes) - 1):
-            u, s, rho = self.layers[i].forward(u, s, rho)
+    def forward(self, u, s, rho, u_ext, s_ext):    
+        
+        u, s, rho = self.recurrent_layer.forward(u, s, rho, u_ext, s_ext, self.max_time_steps)
+            
         return u, s, rho
 
-class MoNet_no_corr(torch.nn.Module):
-    def __init__(self, num_hidden_layers = 10, hidden_layer_size = 64, input_size = 2, output_size = 1):
-        super(MoNet_no_corr, self).__init__()
-        self.layer_sizes = [input_size]+[hidden_layer_size]*num_hidden_layers+[output_size]  # input, hidden, output
+# class MoNet_no_corr(torch.nn.Module):
+#     def __init__(self, num_hidden_layers = 10, hidden_layer_size = 64, input_size = 2, output_size = 1):
+#         super(MoNet_no_corr, self).__init__()
+#         self.layer_sizes = [input_size]+[hidden_layer_size]*num_hidden_layers+[output_size]  # input, hidden, output
         
-        self.layers = torch.nn.ModuleList(
-            [MomentLayer_no_corr(self.layer_sizes[i], self.layer_sizes[i + 1]) for i in range(len(self.layer_sizes) - 1)])
-        return
+#         input_layer = MomentLayer_no_corr(input_size, hidden_layer_size)
+#         recurrent_layer = MomentLayer_no_corr(hidden_layer_size, hidden_layer_size)
+        
+#         self.layers = torch.nn.ModuleList(  [input_layer] + [recurrent_layer for i in range(len(self.layer_sizes) + 1)]  )
+#         return
 
-    def forward(self, u, s):
-        for i in range(len(self.layer_sizes) - 1):
-            u, s = self.layers[i].forward(u, s)
-        return u, s
+#     def forward(self, u, s):
+#         for i in range(len(self.layer_sizes) - 1):
+#             u, s = self.layers[i].forward(u, s)
+#         return u, s
 
 
-class MultilayerPerceptron():
+class RecurrentNN():
     @staticmethod
     def train(config):        
         if config['tensorboard']:
@@ -148,9 +185,9 @@ class MultilayerPerceptron():
         output_size = config['output_size']
         
         if config['with_corr']:
-            model = MoNet(num_hidden_layers = config['num_hidden_layers'], hidden_layer_size = config['hidden_layer_size'], input_size = input_size, output_size = output_size)
+            model = Renoir(max_time_steps = config['max_time_steps'], hidden_layer_size = config['hidden_layer_size'], input_size = input_size, output_size = output_size)
         else:
-            model = MoNet_no_corr(num_hidden_layers = config['num_hidden_layers'], hidden_layer_size = config['hidden_layer_size'], input_size = input_size, output_size = output_size)        
+            model = Renoir(max_time_steps = config['max_time_steps'], hidden_layer_size = config['hidden_layer_size'], input_size = input_size, output_size = output_size)        
             
         train_dataset = Dataset(config['dataset_name'], sample_size = num_batches*batch_size, input_dim = input_size, output_dim = output_size, with_corr = config['with_corr'], fixed_rho = config['fixed_rho'])
         train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size = batch_size)        
@@ -184,7 +221,7 @@ class MultilayerPerceptron():
             for i_batch, sample in enumerate(train_dataloader):
                 optimizer.zero_grad()                
                 if config['with_corr']:
-                    u, s, rho = model.forward(sample['input_data'][0], sample['input_data'][1], sample['input_data'][2])
+                    u, s, rho = model.forward(sample['input_data'][0], sample['input_data'][1], sample['input_data'][2], sample['input_data'][0].clone(), sample['input_data'][1].clone())
                 else:
                     u, s = model.forward(sample['input_data'][0], sample['input_data'][1])
                 
@@ -208,7 +245,7 @@ class MultilayerPerceptron():
                     model.eval()
                     for i_batch, sample in enumerate(validation_dataloader):
                         if config['with_corr']:
-                            u, s, rho = model.forward(sample['input_data'][0], sample['input_data'][1], sample['input_data'][2])
+                            u, s, rho = model.forward(sample['input_data'][0], sample['input_data'][1], sample['input_data'][2], sample['input_data'][0], sample['input_data'][1])
                         else:
                             u, s = model.forward(sample['input_data'][0], sample['input_data'][1])
                         
@@ -272,22 +309,48 @@ if __name__ == "__main__":
 
     config = {'num_batches': 6000,
               'batch_size': 32,
-              'num_epoch': 100,
+              'num_epoch': 30,
               'lr': 0.01,
               'momentum': 0.9,
               'optimizer_name': 'Adam',
-              'num_hidden_layers': 3,
-              'input_size': 2,
-              'output_size': 1,
-              'hidden_layer_size': 32,
+              'num_hidden_layers': None,
+              'max_time_steps': 10,
+              'input_size': 16,
+              'output_size': 16,
+              'hidden_layer_size': 16,
               'trial_id': int(time.time()),
               'tensorboard': True,
-              'log_dir': 'runs/inference',
               'with_corr': True,
-              'dataset_name': 'cue_combo',
-              'loss':'mse_no_corr',
-              'fixed_rho': None #ignored if with_corr = False
+              'dataset_name': 'synfire',
+              'log_dir': 'runs/synfire',
+              'loss':'mse_covariance',
+              'fixed_rho': 0.6 #ignored if with_corr = False
         }
     
-    model = MultilayerPerceptron.train(config)
-    #runfile('./apps/regression/multilayer_perceptron.py', wdir='./')
+    model = RecurrentNN.train(config)
+    
+    # #debug
+    # validation_dataset = Dataset(config['dataset_name'], sample_size = 32, input_dim = 32, output_dim = 32,  with_corr = config['with_corr'], fixed_rho = config['fixed_rho'] )
+    # validation_dataloader = torch.utils.data.DataLoader(validation_dataset, batch_size = 32)
+    # for i_batch, sample in enumerate(validation_dataloader):
+    #     sample = sample
+    # model = Renoir( max_time_steps = 3, hidden_layer_size = 32, input_size = 32, output_size = 32 )
+    # out = model.forward(sample['input_data'][0],sample['input_data'][1],sample['input_data'][2],sample['input_data'][0],sample['input_data'][1])
+    
+    # loss = loss_mse_covariance(out[0], out[1], out[2], sample['target_data'][0], sample['target_data'][1], sample['target_data'][2])
+    # loss.backward()
+    # #debug
+    
+    # NB reason for error: BN fails as mean and std are the same inside a minibatch?
+    # Debug successful: must have a linear layer for external input somehow! Why?
+    
+    #runfile('./apps/regression/recurrent_nn.py', wdir='./')
+    
+# # Example snippet
+# state = init_state
+# for i, (inp, target) in enumerate(my_very_long_sequence_of_inputs):
+#     output, state = one_step_module(inp, state)
+#     if (i+1)%k1 == 0:
+#         loss = loss_module(output, target)
+#         # You want the function below
+#         loss.backward_only_k2_last_calls_to_one_step_module()

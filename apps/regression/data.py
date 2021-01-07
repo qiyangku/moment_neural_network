@@ -110,8 +110,13 @@ class Dataset(torch.utils.data.Dataset):
             rand_shift = int(torch.randint(self.input_dim, (1,)))
             input_mean[i,:] = patch.roll( rand_shift )*2.0 #randomly shifting the location of the patch
             input_std[i,:] = patch.roll( rand_shift)*5.0
-            input_corr[i,:,:] = patch_2d.roll( (rand_shift,rand_shift) , (0,1))
             
+            #inputs are weakly correlated without spatial structure
+            temp_corr = (torch.rand( self.input_dim, self.input_dim )*2 -1)*0.2 #weakly correlated
+            temp_corr.fill_diagonal_(1.0)
+            input_corr[i,:,:] = temp_corr
+            
+            #target output has fixed correlation
             target_mean[i,:] = patch.roll( rand_shift )*0.1
             target_std[i,:] = patch.roll( rand_shift)*0.1
             target_corr[i,:,:] = patch_2d.roll( (rand_shift,rand_shift) , (0,1))
