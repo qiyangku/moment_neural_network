@@ -158,6 +158,31 @@ class Mnn_AvgPool2d(torch.nn.Module):
         return mean, std
 
 
+class Mnn_AvgPool1d(torch.nn.Module):
+    def __init__(self, kernel_size, stride=None, padding=0, ceil_mode=False,
+                 count_include_pad=True, divisor_override=None):
+        super(Mnn_AvgPool1d, self).__init__()
+        self.kernel_size = kernel_size
+        self.stride = stride if (stride is not None) else kernel_size
+        self.padding = padding
+        self.count_include_pad = count_include_pad
+        self.divisor_override = divisor_override
+        self.ceil_mode = ceil_mode
+
+    def extra_repr(self) -> str:
+        return 'kernel_size={kernel_size}, stride={stride}, padding={padding}' \
+               ', dilation={dilation}, ceil_mode={ceil_mode}'.format(**self.__dict__)
+
+    def forward(self, mean: Tensor, std: Tensor):
+        assert mean.size() == std.size()
+        mean = F.avg_pool1d(mean, self.kernel_size, self.stride, self.padding,
+                            self.ceil_mode, self.count_include_pad)
+        std = F.avg_pool1d(torch.pow(std, 2), self.kernel_size, self.stride, self.padding,
+                           self.ceil_mode, self.count_include_pad)
+        std = torch.sqrt(std / self.kernel_size)
+        return mean, std
+
+
 class Mnn_MaxPool2d(torch.nn.Module):
     def __init__(self, kernel_size: int, stride=None, padding=0, dilation=1, ceil_mode=False):
         super(Mnn_MaxPool2d, self).__init__()
@@ -187,4 +212,5 @@ class Mnn_MaxPool2d(torch.nn.Module):
                         p = indices[n, c, h, w].item()
                         temp_std[n, c, h, w] = std[n, c, p//std.size()[2], p % std.size()[3]]
         return mean, temp_std
+
 
