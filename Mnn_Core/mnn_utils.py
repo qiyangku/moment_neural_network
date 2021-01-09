@@ -3,7 +3,7 @@ import torch.nn.functional as F
 import numpy as np
 from Mnn_Core import fast_dawson
 import matplotlib.pyplot as plt
-import palettable
+#import palettable
 
 
 class Param_Container:
