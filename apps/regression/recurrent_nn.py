@@ -49,15 +49,18 @@ class MomentLayerRecurrent(torch.nn.Module):
         self.bn_std_ext = Mnn_Std_Bn1d(output_size , bias = False)
         
         #cache the output (do this for every time step)
-        self.mean = []
-        self.std = []
-        self.corr = []
+        #self.mean = []
+        #self.std = []
+        #self.corr = []        
+        self.input = [None]*5
+        self.output = [None]*3
 
         return
         
     def forward(self, u, s, rho, u_ext, s_ext, seq_len):
         
         #external
+        #if u_ext:
         u_ext = u_ext.clone().detach()
         s_ext = s_ext.clone().detach()
         
@@ -66,10 +69,13 @@ class MomentLayerRecurrent(torch.nn.Module):
         s_ext = self.bn_std_ext.forward(self.bn_mean_ext, u_ext, s_ext)
         u_ext = self.bn_mean_ext(u_ext)
         
-        if not self.training: #cache result only for validation phase            
-            self.mean = torch.zeros( (seq_len, u.shape[0], self.output_size ) )
-            self.std = torch.zeros( (seq_len, u.shape[0], self.output_size ) )
-            self.corr = torch.zeros( (seq_len, u.shape[0], self.output_size, self.output_size ))
+        if not self.training: #cache result only for validation phase                        
+            self.output[0] = torch.zeros( (seq_len, u.shape[0], self.output_size ) )
+            self.output[1] = torch.zeros( (seq_len, u.shape[0], self.output_size ) )
+            self.output[2] = torch.zeros( (seq_len, u.shape[0], self.output_size, self.output_size ))
+            
+            self.input[0], self.input[1], self.input[2] = u, s, rho
+            self.input[3], self.input[4] = u_ext, s_ext
         
         for i in range(seq_len):
             #recurrent
@@ -77,7 +83,8 @@ class MomentLayerRecurrent(torch.nn.Module):
             s = self.bn_std.forward(self.bn_mean, u, s)
             u = self.bn_mean(u)
             
-            #combine recurrent and external
+            #combine recurrent and external            
+            #if u_ext:
             u = u + u_ext
             s = torch.sqrt( s*s + s_ext*s_ext )
             #rho is unaffected if external input is uncorrelated (proof?)
@@ -90,8 +97,8 @@ class MomentLayerRecurrent(torch.nn.Module):
             s = s_activated
             rho = corr_activated
             
-            if not self.training:
-                self.mean[i], self.std[i], self.corr[i] = u_activated, s_activated, corr_activated
+            if not self.training:                
+                self.output[0][i], self.output[1][i], self.output[2][i] = u_activated, s_activated, corr_activated
         
         return u_activated, s_activated, corr_activated
 
@@ -221,7 +228,8 @@ class RecurrentNN():
             for i_batch, sample in enumerate(train_dataloader):
                 optimizer.zero_grad()                
                 if config['with_corr']:
-                    u, s, rho = model.forward(sample['input_data'][0], sample['input_data'][1], sample['input_data'][2], sample['input_data'][0].clone(), sample['input_data'][1].clone())
+                    u, s, rho = model.forward(sample['input_data'][0], sample['input_data'][1], sample['input_data'][2], sample['input_data'][3], sample['input_data'][4])
+                    #u, s, rho = model.forward(sample['input_data'][0], sample['input_data'][1], sample['input_data'][2], None, None)
                 else:
                     u, s = model.forward(sample['input_data'][0], sample['input_data'][1])
                 
@@ -229,6 +237,8 @@ class RecurrentNN():
                     loss = loss_function_mse(u, s, sample['target_data'][0], sample['target_data'][1])
                 elif config['loss'] == 'mse_covariance':
                     loss = loss_mse_covariance(u, s, rho, sample['target_data'][0], sample['target_data'][1], sample['target_data'][2])
+                elif config['loss'] == 'mse_corrcoef':
+                    loss = F.mse_loss( rho, sample['target_data'][2])
                 loss.backward()
                 optimizer.step()
             #--- 
@@ -245,7 +255,8 @@ class RecurrentNN():
                     model.eval()
                     for i_batch, sample in enumerate(validation_dataloader):
                         if config['with_corr']:
-                            u, s, rho = model.forward(sample['input_data'][0], sample['input_data'][1], sample['input_data'][2], sample['input_data'][0], sample['input_data'][1])
+                            u, s, rho = model.forward(sample['input_data'][0], sample['input_data'][1], sample['input_data'][2], sample['input_data'][3], sample['input_data'][4])
+                            #u, s, rho = model.forward(sample['input_data'][0], sample['input_data'][1], sample['input_data'][2], None, None)
                         else:
                             u, s = model.forward(sample['input_data'][0], sample['input_data'][1])
                         
@@ -253,6 +264,8 @@ class RecurrentNN():
                             loss = loss_function_mse(u, s, sample['target_data'][0], sample['target_data'][1])
                         elif config['loss'] == 'mse_covariance':
                             loss = loss_mse_covariance(u, s, rho, sample['target_data'][0], sample['target_data'][1], sample['target_data'][2])
+                        elif config['loss'] == 'mse_corrcoef':
+                            loss = F.mse_loss( rho, sample['target_data'][2])
                         
                     if config['tensorboard']:
                         writer.add_scalar("Loss/Validation", loss, epoch)
@@ -298,23 +311,18 @@ class RecurrentNN():
             writer.flush()
             writer.close()
         
-        file_name = config['trial_id']
-        torch.save(model.state_dict(), './data/regression/{}.pt'.format(file_name) ) #save result by time stamp
-        with open('./data/regression/{}_config.json'.format(file_name),'w') as f:
-            json.dump(config,f)
-        
         return model
 
 if __name__ == "__main__":    
 
-    config = {'num_batches': 6000,
+    config = {'num_batches': 1000,
               'batch_size': 32,
               'num_epoch': 30,
               'lr': 0.01,
               'momentum': 0.9,
               'optimizer_name': 'Adam',
               'num_hidden_layers': None,
-              'max_time_steps': 10,
+              'max_time_steps': 5,
               'input_size': 16,
               'output_size': 16,
               'hidden_layer_size': 16,
@@ -329,20 +337,10 @@ if __name__ == "__main__":
     
     model = RecurrentNN.train(config)
     
-    # #debug
-    # validation_dataset = Dataset(config['dataset_name'], sample_size = 32, input_dim = 32, output_dim = 32,  with_corr = config['with_corr'], fixed_rho = config['fixed_rho'] )
-    # validation_dataloader = torch.utils.data.DataLoader(validation_dataset, batch_size = 32)
-    # for i_batch, sample in enumerate(validation_dataloader):
-    #     sample = sample
-    # model = Renoir( max_time_steps = 3, hidden_layer_size = 32, input_size = 32, output_size = 32 )
-    # out = model.forward(sample['input_data'][0],sample['input_data'][1],sample['input_data'][2],sample['input_data'][0],sample['input_data'][1])
-    
-    # loss = loss_mse_covariance(out[0], out[1], out[2], sample['target_data'][0], sample['target_data'][1], sample['target_data'][2])
-    # loss.backward()
-    # #debug
-    
-    # NB reason for error: BN fails as mean and std are the same inside a minibatch?
-    # Debug successful: must have a linear layer for external input somehow! Why?
+    file_name = config['trial_id']
+    torch.save(model.state_dict(), './data/regression/{}.pt'.format(file_name) ) #save result by time stamp
+    with open('./data/regression/{}_config.json'.format(file_name),'w') as f:
+        json.dump(config,f)
     
     #runfile('./apps/regression/recurrent_nn.py', wdir='./')
     

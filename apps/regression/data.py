@@ -1,4 +1,8 @@
 import torch
+import numpy as np
+from PIL import Image
+import matplotlib.pyplot as plt
+
 
 torch.set_default_tensor_type(torch.DoubleTensor)
 #seed = 5
@@ -38,6 +42,8 @@ class Dataset(torch.utils.data.Dataset):
             self.cue_combination(with_corr = with_corr)
         elif dataset_name == 'synfire':
             self.synfire()
+        elif dataset_name == 'butterfly':
+            self.butterfly()
         else:
             pass
                 
@@ -96,6 +102,10 @@ class Dataset(torch.utils.data.Dataset):
         input_std = torch.zeros(self.sample_size, self.input_dim)
         input_corr = torch.zeros(self.sample_size, self.input_dim, self.input_dim)
         
+        
+        input_mean_ext = 0.1*torch.randn(self.sample_size, self.input_dim)  #uniform random external input
+        input_std_ext = 0.2*torch.rand(self.sample_size, self.input_dim)
+        
         target_mean = torch.zeros(self.sample_size, self.output_dim)
         target_std = torch.zeros(self.sample_size, self.output_dim)
         target_corr = torch.zeros(self.sample_size, self.output_dim, self.output_dim)
@@ -108,8 +118,10 @@ class Dataset(torch.utils.data.Dataset):
         
         for i in range(self.sample_size):
             rand_shift = int(torch.randint(self.input_dim, (1,)))
-            input_mean[i,:] = patch.roll( rand_shift )*2.0 #randomly shifting the location of the patch
-            input_std[i,:] = patch.roll( rand_shift)*5.0
+            # input_mean[i,:] = patch.roll( rand_shift )*2.0 #randomly shifting the location of the patch
+            # input_std[i,:] = patch.roll( rand_shift)*5.0            
+            input_mean[i,:] = patch.roll( rand_shift )*0.15 #randomly shifting the location of the patch
+            input_std[i,:] = patch.roll( rand_shift)*0.2  
             
             #inputs are weakly correlated without spatial structure
             temp_corr = (torch.rand( self.input_dim, self.input_dim )*2 -1)*0.2 #weakly correlated
@@ -121,9 +133,48 @@ class Dataset(torch.utils.data.Dataset):
             target_std[i,:] = patch.roll( rand_shift)*0.1
             target_corr[i,:,:] = patch_2d.roll( (rand_shift,rand_shift) , (0,1))
         
-        self.input_data = list(zip(input_mean, input_std, input_corr))
+        #input_mean_ext = input_mean.clone()
+        #input_std_ext = input_std.clone()
+        
+        self.input_data = list(zip(input_mean, input_std, input_corr, input_mean_ext, input_std_ext))
         self.target_data = list(zip(target_mean, target_std, target_corr))
         return
+        
+    def butterfly(self):
+        ''' Encode an image of a butterfly into the '''
+        img = Image.open("./data/butterfly.png").convert('L')
+        img.thumbnail((self.output_dim, self.output_dim), Image.ANTIALIAS)
+        
+        img = np.asarray(img)/256
+        img = np.triu(img) #take the upper triangular entries
+        img += img.T
+        img = torch.Tensor(img)                
+        #np.fill_diagonal(img, 1.0)
+        #plt.imshow(img, cmap = 'bwr', vmin = -1, vmax = 1)
+        #plt.imshow(img, vmin = 0, vmax = 1)
+        
+        input_mean = (torch.rand(self.sample_size, self.input_dim)*2-1)*1
+        input_std = torch.rand(self.sample_size, self.input_dim)*5
+        
+        input_corr = torch.zeros(self.sample_size, self.input_dim, self.input_dim)
+        
+        target_mean = torch.zeros(self.sample_size, self.output_dim)
+        target_std = torch.zeros(self.sample_size, self.output_dim)
+        target_corr = torch.zeros(self.sample_size, self.output_dim, self.output_dim)
+        
+        for i in range(self.sample_size):
+            temp = img + torch.randn((self.output_dim, self.output_dim))*0.2 #add noise
+            temp[temp > 1] = 1.0 #clip range
+            temp[temp < -1] = -1.0
+            temp.fill_diagonal_(1.0)
+            
+            input_corr[i,:,:] = temp
+            target_corr[i,:,:] = img
+        
+        self.input_data = list(zip(input_mean, input_std, input_corr))
+        self.target_data = list(zip(target_mean, target_std, target_corr))
+        
+        return 
 
 if __name__ == "__main__":    
     dataset = Dataset('cue_combo')   

@@ -261,11 +261,6 @@ class MultilayerPerceptron():
             writer.flush()
             writer.close()
         
-        file_name = config['trial_id']
-        torch.save(model.state_dict(), './data/regression/{}.pt'.format(file_name) ) #save result by time stamp
-        with open('./data/regression/{}_config.json'.format(file_name),'w') as f:
-            json.dump(config,f)
-        
         return model
 
 if __name__ == "__main__":    
@@ -290,4 +285,10 @@ if __name__ == "__main__":
         }
     
     model = MultilayerPerceptron.train(config)
+    
+    file_name = config['trial_id']
+    torch.save(model.state_dict(), './data/regression/{}.pt'.format(file_name) ) #save result by time stamp
+    with open('./data/regression/{}_config.json'.format(file_name),'w') as f:
+        json.dump(config,f)
+    
     #runfile('./apps/regression/multilayer_perceptron.py', wdir='./')
