@@ -147,13 +147,13 @@ class VisualizationTools():
         return fig_bias
     
     @staticmethod
-    def plot_rnn(model):
+    def plot_rnn(model, i = 0):
         fig = plt.figure()
         L = model.recurrent_layer
-        i = 3 #sample index
+        #i = 3 #sample index
         
         ax1 = fig.add_subplot(2,2,1)    
-        u = L.mean[:,i,:]
+        u = L.output[0][:,i,:]
         img1 = ax1.imshow(u, origin = 'lower', aspect = 'auto')
         ax1.set_xlabel('Neuron index')
         ax1.set_ylabel('Time steps')
@@ -162,7 +162,7 @@ class VisualizationTools():
         cbar1.set_label('kHz')#, rotation=270)
         
         ax2 = fig.add_subplot(2,2,2)    
-        s = L.std[:,i,:]
+        s = L.output[1][:,i,:]
         img2 = ax2.imshow(s, origin = 'lower', aspect = 'auto')
         
         ax2.set_xlabel('Neuron index')
@@ -174,24 +174,36 @@ class VisualizationTools():
         ax3 = fig.add_subplot(2,2,3)
         scale = L.bn_mean.weight/torch.sqrt(L.bn_mean.running_var)
         w = L.linear.weight*(scale.unsqueeze(0).T)
-        img3 = ax3.imshow(w.detach().numpy(), cmap = 'bwr')
+        vmax = torch.max(torch.abs(w))
+        img3 = ax3.imshow(w.detach().numpy(), cmap = 'bwr', vmax = vmax, vmin = -vmax)
         ax3.set_title('Recurrent weight (BN-scaled)')
+        fig.colorbar(img3)
+       
+        if len(L.input) > 3:
+            ax4 = fig.add_subplot(2,2,4)
+            with torch.no_grad():
+                u_ext, s_ext = L.linear_ext.forward( L.input[3], L.input[4] ) #comment out if transforming the external input is not needed.        
+                s_ext = L.bn_std_ext.forward(L.bn_mean_ext, u_ext, s_ext)
+                u_ext = L.bn_mean_ext(u_ext)
+            ax4.plot(u_ext[i,:])
+            ax4.plot(s_ext[i,:])
+            ax4.set_xlabel('Neuron index')
+            ax4.set_title('External Input (after BN)')
+
+        #ax4.plot(s_ext)
         
-        #ax4 = fig.add_subplot(2,2,4)
-        #scale_ext = L.bn_mean.weight/torch.sqrt(L.bn_mean.running_var)
-        #w2 = L.linear_ext.weight*(scale_ext.unsqueeze(0).T)        
-        #I need to save the validation inputs to calculate the final effective inputs!
-        
-        
-        fig2 = plt.figure()
-        for t in range( model.recurrent_layer.mean.shape[0]):
-            corr = model.recurrent_layer.corr[t,i,:,:]
+        fig2 = plt.figure()        
+        for t in range( L.output[0].shape[0] + 1):
+            if t == 0:
+                corr = L.input[2][i,:,:]
+            else:
+                corr = L.output[2][t-1,i,:,:]
             
-            ax = fig2.add_subplot(2,5,t+1) 
+            ax = fig2.add_subplot(3,3,t+1)
             img = ax.imshow( corr.detach().numpy(), vmin = -1, vmax = 1, cmap = 'bwr')
             ax.set_xticks([])
             ax.set_yticks([])
-            ax.set_title('t = {}'.format(t+1))
+            ax.set_title('t = {}'.format(t))
         
         fig2.colorbar(img)
         
