@@ -3,7 +3,7 @@ import torch.nn.functional as F
 import numpy as np
 from Mnn_Core import fast_dawson
 import matplotlib.pyplot as plt
-#import palettable
+
 
 
 class Param_Container:
@@ -355,7 +355,7 @@ class Mnn_Core_Func(Param_Container):
 class Debug_Utils:
     @staticmethod
     def mnn_map_visualization(ubar=np.arange(-10, 10, 0.1), sbar=np.arange(0.0, 30, 0.1)):
-        cmap = palettable.cmocean.sequential.Ice_4.mpl_colormap
+        cmap = "rainbow"
         mnn_func = Mnn_Core_Func()
         uv, sv = np.meshgrid(ubar, sbar)
         shape = uv.shape
@@ -493,13 +493,3 @@ class Debug_Utils:
             fig.savefig(save)
         plt.show()
 
-
-if __name__ == "__main__":
-    func = Mnn_Core_Func()
-    ubar = np.linspace(-2, 2, 5)
-    sbar = np.sqrt(np.abs(ubar))
-    u = func.forward_fast_mean(ubar, sbar)
-    s = func.forward_fast_std(ubar, sbar, u)
-    ugu, ugs = func.backward_fast_mean(ubar, sbar, u)
-    sgu, sgs = func.backward_fast_std(ubar, sbar, u, s)
-    print(ugu, ugs, sgu, sgs, sep="\n")
