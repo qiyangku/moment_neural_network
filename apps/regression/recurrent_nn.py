@@ -315,14 +315,14 @@ class RecurrentNN():
 
 if __name__ == "__main__":    
 
-    config = {'num_batches': 1000,
+    config = {'num_batches': 6000,
               'batch_size': 32,
               'num_epoch': 30,
               'lr': 0.01,
               'momentum': 0.9,
               'optimizer_name': 'Adam',
               'num_hidden_layers': None,
-              'max_time_steps': 5,
+              'max_time_steps': 10,
               'input_size': 16,
               'output_size': 16,
               'hidden_layer_size': 16,
