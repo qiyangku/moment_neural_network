@@ -264,20 +264,3 @@ class Chebyshev():
             indx = np.logical_and(x > xmin+ delta_x*i, x <= xmin+delta_x*(i+1))
             h_fitted[indx] = np.polynomial.chebyshev.chebval(x[indx], P[i,:])
         return h_fitted        
-            
-
-if __name__ == "__main__":
-    # demo
-    ds1 = Dawson1()
-    ds2 = Dawson2()    
-    
-    x = np.arange(-3, 1.2, 0.01)
-    H = ds2.int_fast(x)  # h(x)
-    h = ds2.dawson2(x)  # H(x)
-    G = ds1.int_fast(x)
-    g = ds1.dawson1(x)
-
-    plt.plot(x, g, x, G, x, h, x, H)
-    plt.xlabel('x')
-    plt.legend(['g(x)', 'G(x)', 'h(x)', 'H(x)'])
-    plt.show()    
