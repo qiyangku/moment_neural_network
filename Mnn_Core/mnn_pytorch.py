@@ -255,13 +255,10 @@ class Mnn_Activate_Corr(torch.autograd.Function):
 
         # replace the diagonal elements with 1
         if corr_out.dim() == 2:
-            for i in range(corr_out.size()[0]):
-                corr_out[i, i] = 1.
+            corr_out = corr_out.fill_diagonal_(1.0)
 
         else:
-            for i in range(corr_out.size()[0]):
-                for j in range(corr_out.size()[1]):
-                    corr_out[i, j, j] = 1.0
+            torch.diagonal(corr_out, dim1=1, dim2=2).fill_(1.0)
         ctx.save_for_backward(corr_in, mean_in, std_in, mean_out, func_chi)
         return corr_out
 
@@ -285,9 +282,9 @@ class Mnn_Activate_Corr(torch.autograd.Function):
                                                                       clone_mean_out, clone_func_chi)
         chi_grad_mean = torch.from_numpy(chi_grad_mean.reshape(shape))
         chi_grad_std = torch.from_numpy(chi_grad_std.reshape(shape))
-        
-        for i in range(corr_in.shape[0]):
-            corr_in[i,:,:] *= 1-torch.eye(corr_in.shape[1])
+
+        num = corr_in.size()[-1]
+        corr_in = corr_in * (torch.ones(num, num) - torch.eye(num))
         
         temp_corr_grad = torch.mul(grad_out, corr_in)
 
@@ -308,16 +305,12 @@ class Mnn_Activate_Corr(torch.autograd.Function):
             temp_func_chi = func_chi.view(func_chi.size()[0], 1, -1)
             chi_matrix = torch.bmm(temp_func_chi.transpose(-2, -1), temp_func_chi)
 
-        #corr_grad_corr = 2 * torch.mul(chi_matrix, grad_out)
         corr_grad_corr = torch.mul(chi_matrix, grad_out)
         # set the diagonal element of corr_grad_corr to 0
         if corr_grad_corr.dim() != 2:
-            for i in range(corr_grad_corr.size()[0]):
-                for j in range(corr_grad_corr.size()[1]):
-                    corr_grad_corr[i, j, j] = 0.0
+            torch.diagonal(corr_grad_corr, dim1=1, dim2=2).fill_(0.0)
         else:
-            for i in range(corr_grad_corr.size()[0]):
-                corr_grad_corr[i, i] = 0.0
+            corr_grad_corr = corr_grad_corr.fill_diagonal_(0.0)
 
         grad_mean_out = torch.zeros_like(mean_out)
         grad_std_out = torch.zeros_like(mean_out)
