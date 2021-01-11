@@ -283,9 +283,11 @@ class Mnn_Activate_Corr(torch.autograd.Function):
         chi_grad_mean = torch.from_numpy(chi_grad_mean.reshape(shape))
         chi_grad_std = torch.from_numpy(chi_grad_std.reshape(shape))
 
-        num = corr_in.size()[-1]
-        corr_in = corr_in * (torch.ones(num, num) - torch.eye(num))
-        
+        if corr_in.dim() != 2:
+            torch.diagonal(corr_in, dim1=1, dim2=2).fill_(0.0)
+        else:
+            corr_in = corr_in.fill_diagonal_(0.0)
+
         temp_corr_grad = torch.mul(grad_out, corr_in)
 
         if temp_corr_grad.dim() == 2:  # one sample case
@@ -381,4 +383,9 @@ class Mnn_Layer_without_Rho(torch.nn.Module):
         return u, s
 
 
+if __name__ == "__main__":
+    test = torch.rand(3, 3, 3)
+    print(test)
+    torch.diagonal(test, dim1=1, dim2=2).fill_(0.0)
+    print(test)
 

@@ -214,3 +214,31 @@ class Mnn_MaxPool2d(torch.nn.Module):
         return mean, temp_std
 
 
+class Mnn_Layer_with_Rho(torch.nn.Module):
+    def __init__(self, input_size, output_size, bn_std_bias=True):
+        super(Mnn_Layer_with_Rho, self).__init__()
+        self.input_size = input_size
+        self.output_size = output_size
+        self.bn_std_bias = bn_std_bias
+
+        self.linear = Mnn_Linear_Corr(input_size, output_size)
+
+        self.bn_mean = torch.nn.BatchNorm1d(output_size)
+        self.bn_mean.weight.data.fill_(2.5)
+        self.bn_mean.bias.data.fill_(2.5)
+
+        self.bn_std = Mnn_Std_Bn1d(output_size, ext_bias=bn_std_bias)
+
+    def forward(self, u, s, rho):
+        u, s, rho = self.linear.forward(u, s, rho)
+
+        s = self.bn_std.forward(self.bn_mean, u, s)
+        u = self.bn_mean(u)
+
+        u_activated = Mnn_Activate_Mean.apply(u, s)
+        s_activated = Mnn_Activate_Std.apply(u, s, u_activated)
+        corr_activated = Mnn_Activate_Corr.apply(rho, u, s, u_activated, s_activated)
+
+        return u_activated, s_activated, corr_activated
+
+
