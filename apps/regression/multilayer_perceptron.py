@@ -38,7 +38,7 @@ class MomentLayer(torch.nn.Module):
         self.bn_mean.bias.data.fill_(2.5)
         #this roughly set the input mu in the range (0,5)
         
-        self.bn_std = Mnn_Std_Bn1d(output_size , bias = False)
+        self.bn_std = Mnn_Std_Bn1d(output_size , ext_bias = False)
         #self.bn_std.ext_bias.data.fill_(1.0)
         
         #cache the output
