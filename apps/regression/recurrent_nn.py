@@ -13,7 +13,7 @@ torch.set_default_tensor_type(torch.DoubleTensor)
 #seed = 5
 #torch.manual_seed(seed)
 
-def loss_mse_covariance(pred_mean, pred_std, pred_corr, target_mean, target_std, target_corr, cov_only = False):    
+def loss_mse_covariance(pred_mean, pred_std, pred_corr, target_mean, target_std, target_corr, cov_only = False):
     pred_cov = pred_std.unsqueeze(1)*pred_corr*pred_std.unsqueeze(2)
     target_cov = target_std.unsqueeze(1)*target_corr*target_std.unsqueeze(2)
     loss2 = F.l1_loss(pred_cov, target_cov)
@@ -24,6 +24,19 @@ def loss_mse_covariance(pred_mean, pred_std, pred_corr, target_mean, target_std,
         loss = loss2 + F.mse_loss(pred_mean, target_mean)
     return loss
 
+def mexi_hat(input_size, k = 0.3):
+    dx = 2*np.pi/input_size
+    x = torch.arange(0,2*np.pi,dx)
+    y1 = torch.exp(2*(torch.cos(x)-1))
+    y = y1*torch.cos(2*x)
+    #y2 = torch.exp(2*k*(torch.cos(x)-1))
+    #y = y1 - 0.3*y2
+    #plt.plot(x,y)
+    w = torch.zeros(input_size,input_size)
+    for i in range(input_size):
+        w[i,:] = y.roll(i)    
+    #w += torch.randn(w.shape)*0.5
+    return w
 
 class MomentLayerRecurrent(torch.nn.Module):
     def __init__(self, input_size, output_size):
@@ -33,12 +46,14 @@ class MomentLayerRecurrent(torch.nn.Module):
         
         #recurrent input
         self.linear = Mnn_Linear_Corr(output_size, output_size)
+        self.linear.weight.data += mexi_hat(output_size)*0.1 #add to existing weight
+        
         self.linear_ext = Mnn_Linear_without_Corr(output_size, output_size)
         
         self.bn_mean = torch.nn.BatchNorm1d(output_size)
         self.bn_mean.weight.data.fill_(2.5)
         self.bn_mean.bias.data.fill_(2.5)        
-        self.bn_std = Mnn_Std_Bn1d(output_size , bias = False)        
+        self.bn_std = Mnn_Std_Bn1d(output_size , ext_bias = False)        
         
         #external input        
         #self.ext_input = Mnn_Linear_Corr(input_size, output_size)
@@ -46,7 +61,7 @@ class MomentLayerRecurrent(torch.nn.Module):
         self.bn_mean_ext = torch.nn.BatchNorm1d(output_size)
         self.bn_mean_ext.weight.data.fill_(2.5)
         self.bn_mean_ext.bias.data.fill_(2.5)        
-        self.bn_std_ext = Mnn_Std_Bn1d(output_size , bias = False)
+        self.bn_std_ext = Mnn_Std_Bn1d(output_size , ext_bias = False)
         
         #cache the output (do this for every time step)
         #self.mean = []
@@ -61,8 +76,8 @@ class MomentLayerRecurrent(torch.nn.Module):
         
         #external
         #if u_ext:
-        u_ext = u_ext.clone().detach()
-        s_ext = s_ext.clone().detach()
+        #u_ext = u_ext.clone().detach()
+        #s_ext = s_ext.clone().detach()
         
         u_ext, s_ext = self.linear_ext.forward(u_ext, s_ext) #comment out if transforming the external input is not needed.
                 
@@ -323,9 +338,9 @@ if __name__ == "__main__":
               'optimizer_name': 'Adam',
               'num_hidden_layers': None,
               'max_time_steps': 10,
-              'input_size': 16,
-              'output_size': 16,
-              'hidden_layer_size': 16,
+              'input_size': 64,
+              'output_size': 64,
+              'hidden_layer_size': 64,
               'trial_id': int(time.time()),
               'tensorboard': True,
               'with_corr': True,
