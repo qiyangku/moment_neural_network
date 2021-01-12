@@ -5,8 +5,8 @@ A helper function for running multiple runs with different config
 @author: dell
 """
 
-#from apps.regression.multilayer_perceptron import *
-from apps.regression.recurrent_nn import *
+from apps.regression.multilayer_perceptron import *
+#from apps.regression.recurrent_nn import *
 import numpy as np
 import sys
 
@@ -58,33 +58,34 @@ def hyper_para_generator(search_space, indx):
 if __name__ == "__main__":    
     #below is a demo
     
-    search_space = {'num_batches': [6000],
+    search_space = {'num_batches': [60],
               'batch_size': [32],
-              'num_epoch': [30],
-              'lr': np.logspace(-4,-1,10),
+              'num_epoch': [10],
+              'lr': np.logspace(-4,-1,20),
               'momentum': [0.9],
               'optimizer_name': ['Adam'],
-              'num_hidden_layers': [None],
-              'max_time_steps': [10],
-              'input_size': [32],
-              'output_size': [32],
+              'num_hidden_layers': [3],
+              'max_time_steps': [None],
+              'input_size': [2],
+              'output_size': [1],
               'hidden_layer_size': [32],
-              'tensorboard': [True],
+              'tensorboard': [False],
               'with_corr': [True],
-              'dataset_name': ['synfire'],
-              'log_dir': ['runs/synfire'],
-              'loss': ['mse_covariance'],
-              'fixed_rho': [0.6] #ignored if with_corr = False
+              'dataset_name': ['cue_combo'],
+              'log_dir': ['runs/cue_combo'],
+              'loss': ['mse_no_corr'],
+              'fixed_rho': [None] #ignored if with_corr = False
         }
     
+    indx = int(sys.argv[1])
+    config = hyper_para_generator(search_space, indx)
     
-    config = hyper_para_generator(search_space, int(sys.argv[1]))
+    model = MultilayerPerceptron.train(config)
     
-    model = RecurrentNN.train(config)
-    
-    file_name = config['trial_id']
+    file_name = str(indx).zfill(3)+'_'+ str(config['trial_id'])
     torch.save(model.state_dict(), './data/regression/{}.pt'.format(file_name) ) #save result by time stamp
     with open('./data/regression/{}_config.json'.format(file_name),'w') as f:
         json.dump(config,f)
+    print('Run {} complete.'.format(indx))
 
     #runfile('./dev_tools/batch_processor.py', args = '3', wdir='./')
