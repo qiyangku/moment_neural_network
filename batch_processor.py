@@ -75,7 +75,8 @@ if __name__ == "__main__":
               'log_dir': ['runs/cue_combo'],
               'loss': ['mse_no_corr'],
               'seed': [0], #set to None for random seed
-              'fixed_rho': [None] #ignored if with_corr = False
+              'fixed_rho': [None], #ignored if with_corr = False
+              'exp_id': sys.argv[2] #the name given to this experiment
         }
     
     indx = int(sys.argv[1])
@@ -83,7 +84,7 @@ if __name__ == "__main__":
     
     model = MultilayerPerceptron.train(config)
     
-    path =  './data/{}/'.format( str(int(time.time()*1000)) )
+    path =  './data/{}/'.format( search_space['exp_id'] )
     if not os.path.exists(path):
         os.makedirs(path)
     
