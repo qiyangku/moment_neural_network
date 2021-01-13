@@ -193,7 +193,10 @@ class Renoir(torch.nn.Module):
 
 class RecurrentNN():
     @staticmethod
-    def train(config):        
+    def train(config):
+        if config['seed'] is not None:
+            torch.manual_seed(config['seed'])
+                    
         if config['tensorboard']:
             writer = SummaryWriter(log_dir = config['log_dir'] + '_'+ str(config['trial_id']))#log_dir='D:\\mnn_py\\moment_activation\\runs2'
         
@@ -235,6 +238,12 @@ class RecurrentNN():
         else:
             optimizer = torch.optim.Adam(params, lr = lr)
             
+        model.checkpoint = {
+            'epoch': [],
+            'model_state_dict': {},
+            'optimizer_state_dict': {},
+            'loss': [],
+            }
         
         t0 = time.perf_counter()
         for epoch in range(num_epoch):            
@@ -285,17 +294,9 @@ class RecurrentNN():
                     if config['tensorboard']:
                         writer.add_scalar("Loss/Validation", loss, epoch)
                         writer.flush()
-                # ii = 0
-                # for layer in model.layers:                
-                #     #writer.add_scalar("Layer {} mu BN avg. weight".format(ii), layer.bn_mean.weight.data.mean() ,epoch)
-                #     writer.add_scalar("Layer {} mu BN avg. bias".format(ii), layer.bn_mean.bias.data.mean() ,epoch)
-                #     #writer.add_scalar("Layer {} std BN avg. weight".format(ii), layer.bn_std.weight.data.mean() ,epoch)
-                #     writer.add_scalar("Layer {} std BN avg. bias".format(ii), layer.bn_std.bias.data.mean() ,epoch)                
-                #     ii += 1                
-                #writer.add_histogram('Batchnorm mean bias '+str(ii), layer.bn_mean.bias.data , epoch)
-                
-            #loss_values.append(loss.item())
-            #for param in model.layers[0].bn_mean.named_parameters(): param[0] gives names, param[1] gives values
+                    
+                    model.checkpoint['loss'].append(loss.item())
+                    model.checkpoint['epoch'].append(epoch)
             
         
         #print("===============================")
@@ -305,6 +306,9 @@ class RecurrentNN():
         print("Momentum: ", momentum)
         print("Time Elapsed: ", time.perf_counter()-t0)
         print("===============================")
+        
+        model.checkpoint['model_state_dict'] =  model.state_dict()
+        model.checkpoint['optimizer_state_dict'] = optimizer.state_dict()
         
         #writer.add_graph(model, (input_mean,input_std))
         if config['tensorboard']:
@@ -347,6 +351,7 @@ if __name__ == "__main__":
               'dataset_name': 'synfire',
               'log_dir': 'runs/synfire',
               'loss':'mse_covariance',
+              'seed': None,
               'fixed_rho': 0.6 #ignored if with_corr = False
         }
     
