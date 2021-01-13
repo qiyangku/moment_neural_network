@@ -8,7 +8,7 @@ A helper function for running multiple runs with different config
 from apps.regression.multilayer_perceptron import *
 #from apps.regression.recurrent_nn import *
 import numpy as np
-import sys
+import sys, time
 
 #For PBS:
 #INPUT: search_space a dictionary of lists
@@ -58,9 +58,9 @@ def hyper_para_generator(search_space, indx):
 if __name__ == "__main__":    
     #below is a demo
     
-    search_space = {'num_batches': [60],
+    search_space = {'num_batches': [6000],
               'batch_size': [32],
-              'num_epoch': [10],
+              'num_epoch': [100],
               'lr': np.logspace(-4,-1,20),
               'momentum': [0.9],
               'optimizer_name': ['Adam'],
@@ -82,10 +82,13 @@ if __name__ == "__main__":
     
     model = MultilayerPerceptron.train(config)
     
+    folder_name = str(int(  time.time()*1000 ))
     file_name = str(indx).zfill(3)+'_'+ str(config['trial_id'])
-    torch.save(model.state_dict(), './data/regression/{}.pt'.format(file_name) ) #save result by time stamp
-    with open('./data/regression/{}_config.json'.format(file_name),'w') as f:
+    torch.save(model.state_dict(), './data/{}/{}.pt'.format(folder_name, file_name) ) #save result by time stamp
+    with open('./data/{}/{}_config.json'.format(folder_name, file_name),'w') as f:
         json.dump(config,f)
+    #if search_space already saved to folder_name then skip
+    #otherwise save it
     print('Run {} complete.'.format(indx))
 
     #runfile('./dev_tools/batch_processor.py', args = '3', wdir='./')
