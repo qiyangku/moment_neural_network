@@ -47,7 +47,7 @@ def hyper_para_generator(search_space, indx):
             x = subs[i][0] #subscript for parameter k
             config[k] = search_space[k][x]
             i += 1    
-        config['trial_id'] = int(time.time()) #add unique time stamp
+        config['trial_id'] = i #int(time.time()) #add unique time stamp
     
     return config
     
@@ -60,7 +60,7 @@ if __name__ == "__main__":
     search_space = {'num_batches': [2000],
               'batch_size': [32],
               'num_epoch': [30],
-              'lr': list(np.logspace(-3,-1,21)),
+              'lr': list(np.logspace(-2,0,51)),
               'momentum': [0.9],
               'optimizer_name': ['Adam'],
               'num_hidden_layers': [3],
@@ -88,7 +88,7 @@ if __name__ == "__main__":
         with open(path+'search_space.json','w') as f:
             json.dump(search_space, f)
     
-    file_name = str(indx).zfill(3)+'_'+ str(config['trial_id'])    
+    file_name = str(indx).zfill(3) +'_'+str(int(time.time()))
     torch.save(model.checkpoint, path +'{}.pt'.format(file_name) ) #save result by time stamp
     with open(path +'{}_config.json'.format(file_name),'w') as f:
         json.dump(config,f)
