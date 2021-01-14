@@ -58,10 +58,10 @@ def hyper_para_generator(search_space, indx):
 if __name__ == "__main__":    
     #below is a demo
     
-    search_space = {'num_batches': [2],
+    search_space = {'num_batches': [6],
               'batch_size': [32],
               'num_epoch': [10],
-              'lr': list(np.logspace(-4,-1,2)),
+              'lr': list(np.logspace(-4,-1,51)),
               'momentum': [0.9],
               'optimizer_name': ['Adam'],
               'num_hidden_layers': [3],
@@ -87,16 +87,15 @@ if __name__ == "__main__":
     path =  './data/{}/'.format( search_space['exp_id'] )
     if not os.path.exists(path):
         os.makedirs(path)
+        with open(path+'search_space.json','w') as f:
+            json.dump(search_space, f)
     
     file_name = str(indx).zfill(3)+'_'+ str(config['trial_id'])    
     torch.save(model.checkpoint, path +'{}.pt'.format(file_name) ) #save result by time stamp
     with open(path +'{}_config.json'.format(file_name),'w') as f:
         json.dump(config,f)
     
-    with open(path +'search_space.json','w') as f:
-        json.dump(search_space,f)
     #if search_space already saved to folder_name then skip
     #otherwise save it
-    print('Run {} complete.'.format(indx))
 
     #runfile('./dev_tools/batch_processor.py', args = '3', wdir='./')
