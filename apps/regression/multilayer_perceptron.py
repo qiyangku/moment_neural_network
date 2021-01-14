@@ -135,7 +135,9 @@ class MoNet_no_corr(torch.nn.Module):
 class MultilayerPerceptron():
     @staticmethod
     def train(config):        
-        if config['seed'] is not None:
+        if config['seed'] is None:            
+            torch.manual_seed(int(time.time())) #use current time as seed
+        else:
             torch.manual_seed(config['seed'])
             
         if config['tensorboard']:
@@ -270,9 +272,9 @@ class MultilayerPerceptron():
 
 if __name__ == "__main__":    
 
-    config = {'num_batches': 6000,
+    config = {'num_batches': 2,
               'batch_size': 32,
-              'num_epoch': 100,
+              'num_epoch': 10,
               'lr': 0.01,
               'momentum': 0.9,
               'optimizer_name': 'Adam',

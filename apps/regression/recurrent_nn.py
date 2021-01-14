@@ -194,7 +194,9 @@ class Renoir(torch.nn.Module):
 class RecurrentNN():
     @staticmethod
     def train(config):
-        if config['seed'] is not None:
+        if config['seed'] is None:            
+            torch.manual_seed(int(time.time())) #use current time as seed
+        else:
             torch.manual_seed(config['seed'])
                     
         if config['tensorboard']:
