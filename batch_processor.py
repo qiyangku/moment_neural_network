@@ -34,7 +34,6 @@ def hyper_para_generator(search_space, indx):
     
     para_name = list(search_space) #list of parameter names
     shape = [len(search_space[k]) for k in para_name] #list of length of parameters
-    
     if indx >= np.prod(shape):
         print('Warning: index out of range!')
         config = None
@@ -58,10 +57,10 @@ def hyper_para_generator(search_space, indx):
 if __name__ == "__main__":    
     #below is a demo
     
-    search_space = {'num_batches': [6],
+    search_space = {'num_batches': [2000],
               'batch_size': [32],
-              'num_epoch': [10],
-              'lr': list(np.logspace(-4,-1,51)),
+              'num_epoch': [30],
+              'lr': list(np.logspace(-3,-1,21)),
               'momentum': [0.9],
               'optimizer_name': ['Adam'],
               'num_hidden_layers': [3],
@@ -76,15 +75,14 @@ if __name__ == "__main__":
               'loss': ['mse_no_corr'],
               'seed': [0], #set to None for random seed
               'fixed_rho': [None], #ignored if with_corr = False
-              'exp_id': sys.argv[2] #the name given to this experiment
+              'exp_id': [sys.argv[2]] #the name given to this experiment
         }
     
     indx = int(sys.argv[1])
     config = hyper_para_generator(search_space, indx)
-    
     model = MultilayerPerceptron.train(config)
     
-    path =  './data/{}/'.format( search_space['exp_id'] )
+    path =  './data/{}/'.format( config['exp_id'] )
     if not os.path.exists(path):
         os.makedirs(path)
         with open(path+'search_space.json','w') as f:
@@ -94,8 +92,5 @@ if __name__ == "__main__":
     torch.save(model.checkpoint, path +'{}.pt'.format(file_name) ) #save result by time stamp
     with open(path +'{}_config.json'.format(file_name),'w') as f:
         json.dump(config,f)
-    
-    #if search_space already saved to folder_name then skip
-    #otherwise save it
 
     #runfile('./dev_tools/batch_processor.py', args = '3', wdir='./')
