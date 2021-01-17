@@ -44,7 +44,6 @@ class Mnist_Model_Training:
         self.test_loader = None
         self.model = None
 
-
     def fetch_dataset(self):
         self.train_loader = torch.utils.data.DataLoader(
             torchvision.datasets.MNIST(self.file_path, train=True, download=True,
@@ -109,6 +108,7 @@ class Mnist_Model_Training:
         print("------ MNIST MLP_CORR TRAINING START ------")
         for epoch in range(self.EPOCHS):
             for batch_idx, (data, target) in enumerate(self.train_loader):
+                print(batch_idx, target)
                 optimizer.zero_grad()
                 data = data.view(data.size(0), -1)
                 data = data.type(torch.float64)
@@ -182,6 +182,6 @@ class Mnist_Model_Training:
 
 if __name__ == "__main__":
     utils = Mnist_Model_Training()
-    utils.batch_size_train = 64
+    utils.batch_size_train = 5
     utils.training_mlp_with_corr()
-    utils.test_mlp_corr_model()
+
