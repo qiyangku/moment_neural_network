@@ -17,7 +17,7 @@ import os, sys, time
 #Output the config dictionary
 
 
-def hyper_para_generator(search_space, indx):
+def hyper_para_generator(search_space, indx = None):
     '''
     
     Parameters
@@ -34,6 +34,9 @@ def hyper_para_generator(search_space, indx):
     
     para_name = list(search_space) #list of parameter names
     shape = [len(search_space[k]) for k in para_name] #list of length of parameters
+    if indx is None: #no indx specified, pick a random one
+        indx = np.random.choice(np.prod(shape))
+    
     if indx >= np.prod(shape):
         print('Warning: index out of range!')
         config = None
@@ -47,7 +50,7 @@ def hyper_para_generator(search_space, indx):
             x = subs[i][0] #subscript for parameter k
             config[k] = search_space[k][x]
             i += 1    
-        config['trial_id'] = i #int(time.time()) #add unique time stamp
+        config['trial_id'] = indx #int(time.time()) #add unique time stamp
     
     return config
     
@@ -57,29 +60,31 @@ def hyper_para_generator(search_space, indx):
 if __name__ == "__main__":    
     #below is a demo
     
-    search_space = {'num_batches': [2000],
-              'batch_size': [32],
-              'num_epoch': [30],
+    search_space = {'sample_size': [32*6000],
+              'batch_size': [8,16,32],
+              'num_epoch': [100],
               'lr': [0.01],
               'momentum': [0.9],
               'optimizer_name': ['Adam'],
-              'num_hidden_layers': [3],
+              'num_hidden_layers': list(range(10)),
               'max_time_steps': [None],
               'input_size': [2],
               'output_size': [1],
-              'hidden_layer_size': [32],
+              'hidden_layer_size': list(range(100)),
               'tensorboard': [False],
               'with_corr': [True],
               'dataset_name': ['cue_combo'],
               'log_dir': ['runs/cue_combo'],
               'loss': ['mse_no_corr'],
-              'seed': [0], #set to None for random seed
+              'seed': [None], #set to None for random seed
               'fixed_rho': [None], #ignored if with_corr = False
               'exp_id': [sys.argv[2]], #the name given to this experiment
-              'repeat': list(range(5)) #repeat same trial multiple times
+              'repeat': [0] #repeat same trial multiple times
               }
     
-    indx = int(sys.argv[1])
+    indx = None #use this to pick a random config
+    #indx = int(sys.argv[1]) #use this to pick a particular config
+    
     config = hyper_para_generator(search_space, indx)
     model = MultilayerPerceptron.train(config)
     
@@ -94,4 +99,4 @@ if __name__ == "__main__":
     with open(path +'{}_config.json'.format(file_name),'w') as f:
         json.dump(config,f)
 
-    #runfile('./dev_tools/batch_processor.py', args = '3', wdir='./')
+    #runfile('./batch_processor.py', args = '0 test', wdir='./')

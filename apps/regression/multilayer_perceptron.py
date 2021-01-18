@@ -143,8 +143,9 @@ class MultilayerPerceptron():
         if config['tensorboard']:
             writer = SummaryWriter(log_dir = config['log_dir'] + '_'+ str(config['trial_id']))#log_dir='D:\\mnn_py\\moment_activation\\runs2'
         
-        num_batches = config['num_batches'] #500#20 need more data to train well
+        sample_size = config['sample_size']        
         batch_size = config['batch_size'] #64
+        num_batches = int(sample_size/batch_size)
         num_epoch = config['num_epoch'] #50#1000
         lr = config['lr']#0.01
         momentum = config['momentum'] #0.9
@@ -157,7 +158,7 @@ class MultilayerPerceptron():
         else:
             model = MoNet_no_corr(num_hidden_layers = config['num_hidden_layers'], hidden_layer_size = config['hidden_layer_size'], input_size = input_size, output_size = output_size)        
             
-        train_dataset = Dataset(config['dataset_name'], sample_size = num_batches*batch_size, input_dim = input_size, output_dim = output_size, with_corr = config['with_corr'], fixed_rho = config['fixed_rho'])
+        train_dataset = Dataset(config['dataset_name'], sample_size = sample_size, input_dim = input_size, output_dim = output_size, with_corr = config['with_corr'], fixed_rho = config['fixed_rho'])
         train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size = batch_size)        
     
         model.target_transform = train_dataset.transform
@@ -273,7 +274,7 @@ class MultilayerPerceptron():
 
 if __name__ == "__main__":    
 
-    config = {'num_batches': 2,
+    config = {'sample_size': 64,
               'batch_size': 32,
               'num_epoch': 10,
               'lr': 0.01,
