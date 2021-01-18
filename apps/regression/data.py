@@ -88,6 +88,7 @@ class Dataset(torch.utils.data.Dataset):
             std_bias = - torch.min(target_std)/(torch.max(target_std)-torch.min(target_std))*0.1+0.05
             
             self.transform = lambda x, y: (x*mean_scale + mean_bias , y*std_scale + std_bias)
+            self.transform_coefs = {'mean_scale': mean_scale, 'mean_bias': mean_bias, 'std_scale': std_scale, 'std_bias': std_bias}
         
         target_mean, target_std = self.transform( target_mean, target_std )
         target_corr = torch.ones(self.sample_size,1,1)

@@ -186,6 +186,7 @@ class MultilayerPerceptron():
             'model_state_dict': {},
             'optimizer_state_dict': {},
             'loss': [],
+            'dataset_transform_coefs': train_dataset.transform_coefs
             }
         
         t0 = time.perf_counter()
