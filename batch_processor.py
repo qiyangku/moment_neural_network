@@ -60,7 +60,7 @@ if __name__ == "__main__":
     search_space = {'num_batches': [2000],
               'batch_size': [32],
               'num_epoch': [30],
-              'lr': list(np.logspace(-2,0,51)),
+              'lr': [0.01],
               'momentum': [0.9],
               'optimizer_name': ['Adam'],
               'num_hidden_layers': [3],
@@ -75,8 +75,9 @@ if __name__ == "__main__":
               'loss': ['mse_no_corr'],
               'seed': [0], #set to None for random seed
               'fixed_rho': [None], #ignored if with_corr = False
-              'exp_id': [sys.argv[2]] #the name given to this experiment
-        }
+              'exp_id': [sys.argv[2]], #the name given to this experiment
+              'repeat': list(range(5)) #repeat same trial multiple times
+              }
     
     indx = int(sys.argv[1])
     config = hyper_para_generator(search_space, indx)
