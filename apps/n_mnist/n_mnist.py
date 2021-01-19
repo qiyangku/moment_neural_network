@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 from Mnn_Core.mnn_modules import *
-from torch.utils.tensorboard import SummaryWriter
 import os
 
 
@@ -250,10 +249,92 @@ class N_Mnist_Model_Training:
             100. * correct / len(self.test_loader.dataset)))
 
 
-if __name__ == "__main__":
+def plot_event_static_info(pack, cmap="coolwarm", save_op=False, save_name=None, show_im=True):
+    u, s, r, t = pack
+    nrows = 1
+    ncols = 3
+    fig = plt.figure(figsize=(ncols*5, nrows*5))
+    fig.subplots_adjust(left=0.05, bottom=0.05, right=0.95, top=0.95, hspace=0.1, wspace=0.1)
+    ax = fig.add_subplot(nrows, ncols, 1)
+    im = ax.imshow(u.view(34, 34), cmap=cmap)
+    ax.set_title("mean")
+    plt.colorbar(im)
+    
+    ax = fig.add_subplot(nrows, ncols, 2)
+    im = ax.imshow(s.view(34, 34), cmap=cmap)
+    ax.set_title("std")
+    plt.colorbar(im)
+    
+    ax = fig.add_subplot(nrows, ncols, 3)
+    im = ax.imshow(r, cmap=cmap)
+    ax.set_title("rho")
+    plt.colorbar(im)
+    
+    plt.suptitle("label: {:}".format(t))
+    if save_op:
+        if save_name is None:
+            fig.savefig("preprocessed_label_"+str(t)+".png")
+        else:
+            fig.savefig(save_name)
+    if show_im:
+        plt.show()
+
+
+def plt_output_case(cmap="coolwarm"):
     data = nmistDataset()
-    td = read2Dspikes(data.file_path[10])
-    print(td.t.min(), td.t.max(), td.t.max() - td.t.min())
+    samples_idx = []
+    check = []
+    for i in range(len(data)):
+        if len(samples_idx) == 10:
+            break
+        if data.labels[i] not in check:
+            samples_idx.append(i)
+            check.append(data.labels[i])
+        else:
+            continue
+    # sample indx: [0, 5766, 12359, 18149, 24109, 29811, 35060, 40808, 46929, 52611]
+    net = torch.load("n_mnist_mlp_corr.pt")
+    net.eval()
+    with torch.no_grad():
+        for i in samples_idx:
+            u, s, r, t = data[i]
+            u = u.view(1, -1)
+            s = s.view(1, -1)
+            r = r.view(1, 34 * 34, -1)
+            out1, out2, out3 = net(u, s, r)
+            pred = out1.data.max(1, keepdim=True)[1]
+            fig = plt.figure(figsize=(15, 5))
+            fig.subplots_adjust(left=0.05, bottom=0.05, right=0.95, top=0.9, hspace=0.1, wspace=0.1)
+            ax = fig.add_subplot(1, 3, 1)
+            ax.plot(out1.detach().numpy().reshape(-1))
+            ax.set_title("output mean")
+
+            ax = fig.add_subplot(1, 3, 2)
+            ax.plot(out2.detach().numpy().reshape(-1))
+            ax.set_title("output std")
+
+            ax = fig.add_subplot(1, 3, 3)
+            im = ax.imshow(out3.detach().numpy().reshape(10, 10), cmap=cmap)
+            ax.set_title("output rho")
+            plt.colorbar(im)
+
+            plt.suptitle("predict: {:}, ground true: {:}".format(pred.item(), t))
+            fig.savefig("output_label_{:}.png".format(t))
+
+
+if __name__ == '__main__':
+    data = nmistDataset()
+    u, s, r, t = data[10000]
+    r = r.to_sparse()
+    ans = r*r
+    ans = ans.to_dense()
+    plt.imshow(ans, cmap="rainbow")
+    plt.show()
+
+
+
+
+
 
 
 
