@@ -6,6 +6,7 @@ Created on Sun Jan 17 16:11:47 2021
 """
 
 import numpy as np
+import scipy as sp
 import matplotlib.pyplot as plt
 import time
 from Mnn_Core.maf import *
@@ -20,8 +21,11 @@ class InteNFire():
         self.Vspk = 50
         self.dt = 1e-1 #integration time step (ms)
         self.num_neurons = num_neurons
-        self.T = T
-        self.synaptic_weight = 0.1 #synaptic weight
+        self.T = T    
+        self.we = 0.1
+        self.wi = 0.4
+        self.ei_balance = 0.5 #fraction of total current variance due to inhibitory inputs
+        self.inh_curr_mean = 1 #fix the magnitude of the mean inhibition current
         
         #self.T = 10e3 #ms 
     
@@ -47,15 +51,65 @@ class InteNFire():
         spk_time = np.cumsum(isi, axis=1)
         
         return spk_time
-    
-    def input_synaptic_current(self, t, spk_time):
-        '''Convert input spike time to post-synaptic current'''        
-        indx1 = t < spk_time
-        indx2 = t-self.dt < spk_time
-        num_spks = np.sum(indx1 ^ indx2, axis = 1) #^ = xor
         
-        return num_spks*self.synaptic_weight
+    # def input_synaptic_current(self, t, spk_time):
+    #     '''Convert input spike time to post-synaptic current'''        
+    #     indx1 = t < spk_time
+    #     indx2 = t-self.dt < spk_time
+    #     num_spks = np.sum(indx1 ^ indx2, axis = 1) #^ = xor
+        
+    #     return num_spks*self.we
     
+    def input_ei_current(self, t):
+        '''Convert intput spike (sparse matrix) to post-synaptic current'''
+        current = self.we*self.exc_input[:,t] - self.wi*self.inh_input[:,t]        
+        return current.toarray().flatten()
+        
+    
+    def input_spike_sparse(self, spk_mean, spk_var):
+        
+        scale = spk_var/spk_mean/spk_mean
+        shape = spk_mean/spk_var
+        
+        num_spikes = int(self.T*spk_mean)*5
+        num_samples = num_spikes*self.num_neurons
+        
+        isi = np.random.gamma(shape, scale, num_samples)
+        isi = isi.reshape((self.num_neurons, num_spikes ))        
+        
+        spk_time = np.cumsum(isi, axis=1)
+        
+        #need to do a safety check to make sure that spk_time[:,-1] > self.T for all neurons
+        if np.sum(spk_time[:,-1] < self.T):
+            print('Warning: not enough spikes!')
+        
+        spk_time = np.floor( spk_time/self.dt).flatten()
+        neuron_index = np.tile( np.arange(self.num_neurons) , (num_spikes,1)).T.flatten()        
+        dat = np.ones(num_samples)
+        
+        spk_mat = sp.sparse.coo_matrix( (dat, (neuron_index, spk_time)), shape = (self.num_neurons, int(np.max(spk_time))+1 ) ).tocsc() #compressed column format
+        
+        
+        spk_mat = spk_mat[:,:int(self.T/self.dt)]
+        
+        # spk_time = 0
+        # neuron_index = np.arange(self.num_neurons)
+        # R = [] #row index for neurons
+        # C = [] #column index for time
+        
+        # while True:            #this is too slow!
+        #     spk_time += np.random.gamma(shape, scale, self.num_neurons)            
+        #     valid_entry = spk_time < self.T #spike time does not exceed simulation time            
+        #     if np.sum(valid_entry)==0:                
+        #         break
+        #     else:
+        #         C = np.append(C, np.floor(spk_time[valid_entry]/self.dt) )
+        #         R = np.append(R, neuron_index[valid_entry])
+
+        # dat = np.ones(R.size)            
+        # spk_mat = sp.sparse.coo_matrix( (dat, (R,C)), shape = (self.num_neurons, int(self.T/self.dt)) ).tocsc() #compressed column format
+        return spk_mat
+        
     
     def input_gaussian_current(self, mean, std, corr = None):
         ''' Generate gaussian input current '''
@@ -86,9 +140,15 @@ class InteNFire():
                 
         mean, std, rho = input_mean, input_std, input_corr # input current stats (not firing rate, it is current)
         if input_type == 'spike':
-            spk_mean = mean/self.synaptic_weight
-            spk_var = (std/self.synaptic_weight)**2
-            spk_time = self.input_spk_time(spk_mean, spk_var)
+            #fix mean_inh and std_inh
+            inh_var = self.ei_balance*np.power(std/self.wi,2)
+            exc_var = (1-self.ei_balance)*np.power(std/self.we,2)
+            
+            exc_mean = (mean + self.inh_curr_mean)/self.we
+            inh_mean = self.inh_curr_mean/self.wi
+            
+            self.exc_input = self.input_spike_sparse(exc_mean, exc_var)
+            self.inh_input = self.input_spike_sparse(inh_mean, inh_var)
         
         start_time = time.time()
         for i in range(num_timesteps):
@@ -100,7 +160,8 @@ class InteNFire():
                 corr = np.eye(2) + rho*(1-np.eye(2))
                 input_current = self.input_gaussian_current(mean, std, corr = corr)
             elif input_type == 'spike':
-                input_current = self.input_synaptic_current(i*self.dt, spk_time)
+                #input_current = self.input_synaptic_current(i*self.dt, spk_time)
+                input_current = self.input_ei_current(i)                   
                 
             v += -v*self.L*self.dt + input_current
             
@@ -132,18 +193,25 @@ class InteNFire():
         return SpkTime, V, t
     
     def empirical_maf(self, SpkTime):
-        isi = []
-        for spk_time in SpkTime:            
-            spk_time = np.array(spk_time)
-            spk_time = spk_time[ spk_time > 500] #remove burn-in time; unit: ms
-            isi.extend( list(np.diff(spk_time)) )
-        mean_isi = np.mean(isi)
-        var_isi = np.var(isi)
+        '''Turns out it's a bad idea to calulate spk stats with isi'''
+        # isi = []
+        # for spk_time in SpkTime:
+        #     spk_time = np.array(spk_time)
+        #     spk_time = spk_time[ spk_time > 500] #remove burn-in time; unit: ms
+        #     if spk_time.size > 1:
+        #         isi.extend( list(np.diff(spk_time)) )
+            
+        # if len(isi)>30:
+        #     mean_isi = np.mean(isi)
+        #     var_isi = np.var(isi)
+        #     mu = 1/mean_isi        
+        #     sig = np.sqrt( np.power(mu,3)*var_isi )
+        # else:
+        spike_count = [len(spk_time) for spk_time in SpkTime]            
+        mu = np.mean(spike_count)/self.T
+        sig = np.sqrt(np.var(spike_count)/self.T)
         
-        #mean firing rate
-        mu = 1/mean_isi
-        #std firing rate
-        sig = np.sqrt( np.power(mu,3)*var_isi )
+        
         return mu, sig
 
 def input_output_anlaysis_2neurons():
@@ -168,9 +236,11 @@ def input_output_anlaysis_2neurons():
     
     
 def input_output_anlaysis(input_type):
-    inf = InteNFire(T = 1e3, num_neurons = 100) #time unit: ms        
-    N = 31
-    u = np.linspace(1,3,N)
+    inf = InteNFire(T = 1e3, num_neurons = 1000) #time unit: ms        
+    #N = 31
+    #u = np.linspace(-0.5,2.5,N)
+    N = 51
+    u = np.linspace(-0.5,2.5,N)
     s = np.ones(N)*1.5
     
     emp_u = np.zeros(N)
@@ -178,7 +248,7 @@ def input_output_anlaysis(input_type):
     
     start_time = time.time()
     for i in range(N):
-        SpkTime, _, _ = inf.run(input_mean = u[i], input_std = s[i],input_type = input_type, show_message = True)
+        SpkTime, _, _ = inf.run(input_mean = u[i], input_std = s[i], input_type = input_type, show_message = False)
         emp_u[i], emp_s[i] = inf.empirical_maf(SpkTime)    
                 
         progress = (i+1)/N*100
@@ -195,7 +265,7 @@ def input_output_anlaysis(input_type):
     ax1.plot(u, maf_u)
     ax1.plot(u, emp_u, '.')
     ax1.set_xlabel('Mean Input Current')
-    ax1.set_ylabel('Mean Firing Rate')
+    ax1.set_ylabel('Firing Variability')
     #ax1.set_title('Mean')
     #cbar1 = fig.colorbar(img1)
     #cbar1.set_label('kHz')#, rotation=270)
@@ -204,18 +274,19 @@ def input_output_anlaysis(input_type):
     ax2.plot(u, maf_s)
     ax2.plot(u, emp_s, '.')
     ax2.set_xlabel('Mean Input Current')
-    ax2.set_ylabel('Std Firing Rate')
+    ax2.set_ylabel('Firing Variability')
     
     
     return emp_u, emp_s, maf_u, maf_s
     
 
 def simple_demo(input_type):
-    inf = InteNFire(T = 1e3, num_neurons = 2) #time unit: ms
-    #s = inf.input_spk_time(1,1)
+    inf = InteNFire(T = 1e3, num_neurons = 100) #time unit: ms    
+    
     SpkTime, V, t = inf.run(input_type = input_type, record_v = True, show_message = True)
     plt.plot(t,V[0,:])
     plt.plot(SpkTime[0],[51]*len(SpkTime[0]),'.')        
+    return inf
 
 def simple_demo_two_neurons():
     inf = InteNFire(T = 1e3, num_neurons = 2) #time unit: ms    
@@ -227,10 +298,10 @@ def simple_demo_two_neurons():
         
 
 if __name__=='__main__':
-    input_rho, output_rho = input_output_anlaysis_2neurons()
+    #input_rho, output_rho = input_output_anlaysis_2neurons()
     #simple_demo_two_neurons()
     #simple_demo(input_type = 'gaussian' )
-    #input_output_anlaysis(input_type = 'spike')
-    #simple_demo(input_type = 'spike' )
+    input_output_anlaysis(input_type = 'spike')
+    #inf = simple_demo(input_type = 'spike' )
     #runfile('./dev_tools/validate_w_spiking_neuron.py', wdir='./')
         
