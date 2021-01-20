@@ -40,9 +40,12 @@ class VisualizationTools():
                 output_mean, output_std = model.forward(input_mean2, input_std2)            
             #target_mean = target_mean*target_affine[0] + target_affine[1]
             #target_std = target_std*target_affine[2] + target_affine[3]
-            target_mean, target_std = model.target_transform( target_mean, target_std )         
+            try:
+                target_mean, target_std = model.target_transform( target_mean, target_std )         
+            except:
+                print('model has not target_transform property!')
             
-            ax1.plot(target_mean, target_std,'b', alpha=0.5)
+            #ax1.plot(target_mean, target_std,'b', alpha=0.5)
             ax1.plot(output_mean.detach().numpy(), output_std.detach().numpy(), 'b')
         
         sigma = torch.linspace(1,3,10)
@@ -63,9 +66,12 @@ class VisualizationTools():
             else:
                 output_mean, output_std = model.forward(input_mean2, input_std2) 
             
-            target_mean, target_std = model.target_transform( target_mean, target_std )  
+            try:
+                target_mean, target_std = model.target_transform( target_mean, target_std )         
+            except:
+                print('model has not target_transform property!')
             
-            ax1.plot(target_mean, target_std,'r', alpha=0.4)
+            #ax1.plot(target_mean, target_std,'r', alpha=0.4)
             ax1.plot(output_mean.detach().numpy(), output_std.detach().numpy(), 'r')
         
         ax1.set_xlabel('Output mean')
@@ -184,7 +190,7 @@ class VisualizationTools():
             with torch.no_grad():
                 u_ext, s_ext = L.linear_ext.forward( L.input[3], L.input[4] ) #comment out if transforming the external input is not needed.        
                 s_ext = L.bn_std_ext.forward(L.bn_mean_ext, u_ext, s_ext)
-                u_ext = L.bn_mean_ext(u_ext)
+                u_ext = L.bn_mean_ext(u_ext) + L.bn_mean.bias - scale*L.bn_mean.running_mean
             ax4.plot(u_ext[i,:])
             ax4.plot(s_ext[i,:])
             ax4.set_xlabel('Neuron index')
@@ -199,7 +205,7 @@ class VisualizationTools():
             else:
                 corr = L.output[2][t-1,i,:,:]
             
-            ax = fig2.add_subplot(3,3,t+1)
+            ax = fig2.add_subplot(4,3,t+1)
             img = ax.imshow( corr.detach().numpy(), vmin = -1, vmax = 1, cmap = 'bwr')
             ax.set_xticks([])
             ax.set_yticks([])

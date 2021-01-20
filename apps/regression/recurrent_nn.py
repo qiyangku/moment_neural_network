@@ -13,7 +13,7 @@ torch.set_default_tensor_type(torch.DoubleTensor)
 #seed = 5
 #torch.manual_seed(seed)
 
-def loss_mse_covariance(pred_mean, pred_std, pred_corr, target_mean, target_std, target_corr, cov_only = False):    
+def loss_mse_covariance(pred_mean, pred_std, pred_corr, target_mean, target_std, target_corr, cov_only = False):
     pred_cov = pred_std.unsqueeze(1)*pred_corr*pred_std.unsqueeze(2)
     target_cov = target_std.unsqueeze(1)*target_corr*target_std.unsqueeze(2)
     loss2 = F.l1_loss(pred_cov, target_cov)
@@ -24,6 +24,19 @@ def loss_mse_covariance(pred_mean, pred_std, pred_corr, target_mean, target_std,
         loss = loss2 + F.mse_loss(pred_mean, target_mean)
     return loss
 
+def mexi_hat(input_size, k = 0.3):
+    dx = 2*np.pi/input_size
+    x = torch.arange(0,2*np.pi,dx)
+    y1 = torch.exp(2*(torch.cos(x)-1))
+    y = y1*torch.cos(2*x)
+    #y2 = torch.exp(2*k*(torch.cos(x)-1))
+    #y = y1 - 0.3*y2
+    #plt.plot(x,y)
+    w = torch.zeros(input_size,input_size)
+    for i in range(input_size):
+        w[i,:] = y.roll(i)    
+    #w += torch.randn(w.shape)*0.5
+    return w
 
 class MomentLayerRecurrent(torch.nn.Module):
     def __init__(self, input_size, output_size):
@@ -33,12 +46,14 @@ class MomentLayerRecurrent(torch.nn.Module):
         
         #recurrent input
         self.linear = Mnn_Linear_Corr(output_size, output_size)
+        self.linear.weight.data += mexi_hat(output_size)*0.1 #add to existing weight
+        
         self.linear_ext = Mnn_Linear_without_Corr(output_size, output_size)
         
         self.bn_mean = torch.nn.BatchNorm1d(output_size)
         self.bn_mean.weight.data.fill_(2.5)
         self.bn_mean.bias.data.fill_(2.5)        
-        self.bn_std = Mnn_Std_Bn1d(output_size , bias = False)        
+        self.bn_std = Mnn_Std_Bn1d(output_size , ext_bias = False)        
         
         #external input        
         #self.ext_input = Mnn_Linear_Corr(input_size, output_size)
@@ -46,7 +61,7 @@ class MomentLayerRecurrent(torch.nn.Module):
         self.bn_mean_ext = torch.nn.BatchNorm1d(output_size)
         self.bn_mean_ext.weight.data.fill_(2.5)
         self.bn_mean_ext.bias.data.fill_(2.5)        
-        self.bn_std_ext = Mnn_Std_Bn1d(output_size , bias = False)
+        self.bn_std_ext = Mnn_Std_Bn1d(output_size , ext_bias = False)
         
         #cache the output (do this for every time step)
         #self.mean = []
@@ -61,8 +76,8 @@ class MomentLayerRecurrent(torch.nn.Module):
         
         #external
         #if u_ext:
-        u_ext = u_ext.clone().detach()
-        s_ext = s_ext.clone().detach()
+        #u_ext = u_ext.clone().detach()
+        #s_ext = s_ext.clone().detach()
         
         u_ext, s_ext = self.linear_ext.forward(u_ext, s_ext) #comment out if transforming the external input is not needed.
                 
@@ -178,13 +193,18 @@ class Renoir(torch.nn.Module):
 
 class RecurrentNN():
     @staticmethod
-    def train(config):        
+    def train(config):
+        if config['seed'] is None:            
+            torch.manual_seed(int(time.time())) #use current time as seed
+        else:
+            torch.manual_seed(config['seed'])
+                    
         if config['tensorboard']:
             writer = SummaryWriter(log_dir = config['log_dir'] + '_'+ str(config['trial_id']))#log_dir='D:\\mnn_py\\moment_activation\\runs2'
         
-        num_batches = config['num_batches'] #500#20 need more data to train well
+        sample_size = config['sample_size']        
         batch_size = config['batch_size'] #64
-        num_epoch = config['num_epoch'] #50#1000
+        num_batches = int(sample_size/batch_size)
         lr = config['lr']#0.01
         momentum = config['momentum'] #0.9
         optimizer_name = config['optimizer_name']
@@ -196,7 +216,7 @@ class RecurrentNN():
         else:
             model = Renoir(max_time_steps = config['max_time_steps'], hidden_layer_size = config['hidden_layer_size'], input_size = input_size, output_size = output_size)        
             
-        train_dataset = Dataset(config['dataset_name'], sample_size = num_batches*batch_size, input_dim = input_size, output_dim = output_size, with_corr = config['with_corr'], fixed_rho = config['fixed_rho'])
+        train_dataset = Dataset(config['dataset_name'], sample_size = sample_size, input_dim = input_size, output_dim = output_size, with_corr = config['with_corr'], fixed_rho = config['fixed_rho'])
         train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size = batch_size)        
     
         model.target_transform = train_dataset.transform
@@ -220,6 +240,12 @@ class RecurrentNN():
         else:
             optimizer = torch.optim.Adam(params, lr = lr)
             
+        model.checkpoint = {
+            'epoch': [],
+            'model_state_dict': {},
+            'optimizer_state_dict': {},
+            'loss': [],
+            }
         
         t0 = time.perf_counter()
         for epoch in range(num_epoch):            
@@ -270,17 +296,9 @@ class RecurrentNN():
                     if config['tensorboard']:
                         writer.add_scalar("Loss/Validation", loss, epoch)
                         writer.flush()
-                # ii = 0
-                # for layer in model.layers:                
-                #     #writer.add_scalar("Layer {} mu BN avg. weight".format(ii), layer.bn_mean.weight.data.mean() ,epoch)
-                #     writer.add_scalar("Layer {} mu BN avg. bias".format(ii), layer.bn_mean.bias.data.mean() ,epoch)
-                #     #writer.add_scalar("Layer {} std BN avg. weight".format(ii), layer.bn_std.weight.data.mean() ,epoch)
-                #     writer.add_scalar("Layer {} std BN avg. bias".format(ii), layer.bn_std.bias.data.mean() ,epoch)                
-                #     ii += 1                
-                #writer.add_histogram('Batchnorm mean bias '+str(ii), layer.bn_mean.bias.data , epoch)
-                
-            #loss_values.append(loss.item())
-            #for param in model.layers[0].bn_mean.named_parameters(): param[0] gives names, param[1] gives values
+                    
+                    model.checkpoint['loss'].append(loss.item())
+                    model.checkpoint['epoch'].append(epoch)
             
         
         #print("===============================")
@@ -290,6 +308,9 @@ class RecurrentNN():
         print("Momentum: ", momentum)
         print("Time Elapsed: ", time.perf_counter()-t0)
         print("===============================")
+        
+        model.checkpoint['model_state_dict'] =  model.state_dict()
+        model.checkpoint['optimizer_state_dict'] = optimizer.state_dict()
         
         #writer.add_graph(model, (input_mean,input_std))
         if config['tensorboard']:
@@ -315,23 +336,24 @@ class RecurrentNN():
 
 if __name__ == "__main__":    
 
-    config = {'num_batches': 1000,
+    config = {'sample_size': 64,
               'batch_size': 32,
               'num_epoch': 30,
               'lr': 0.01,
               'momentum': 0.9,
               'optimizer_name': 'Adam',
               'num_hidden_layers': None,
-              'max_time_steps': 5,
-              'input_size': 16,
-              'output_size': 16,
-              'hidden_layer_size': 16,
+              'max_time_steps': 10,
+              'input_size': 64,
+              'output_size': 64,
+              'hidden_layer_size': 64,
               'trial_id': int(time.time()),
               'tensorboard': True,
               'with_corr': True,
               'dataset_name': 'synfire',
               'log_dir': 'runs/synfire',
               'loss':'mse_covariance',
+              'seed': None,
               'fixed_rho': 0.6 #ignored if with_corr = False
         }
     
