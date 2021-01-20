@@ -13,7 +13,7 @@ from Mnn_Core.maf import *
 
 
 class InteNFire():
-    def __init__(self, T = 1e3, num_neurons = 10):
+    def __init__(self, num_neurons = 10):
         self.L = 1/20 #ms
         self.Vth = 20
         self.Vres = 0        
@@ -21,11 +21,13 @@ class InteNFire():
         self.Vspk = 50
         self.dt = 1e-1 #integration time step (ms)
         self.num_neurons = num_neurons
-        self.T = T    
+        #self.T = T    
         self.we = 0.1
         self.wi = 0.4
         self.ei_balance = 0.5 #fraction of total current variance due to inhibitory inputs
         self.inh_curr_mean = 1 #fix the magnitude of the mean inhibition current
+        
+        self.maf = MomentActivation()
         
         #self.T = 10e3 #ms 
     
@@ -124,8 +126,17 @@ class InteNFire():
             
         return input_current
     
-    def run(self, input_mean = 1, input_std = 1, input_corr = None, input_type = 'gaussian', record_v = False, show_message = False):
+    def run(self, T = None, input_mean = 1, input_std = 1, input_corr = None, input_type = 'gaussian', record_v = False, show_message = False):
         '''Simulate integrate and fire neurons'''
+        
+        if T:
+            self.T = T            
+        else:
+            # use adaptive time step based on firing rate predicted by m.a.f.                        
+            # only supports scalar input_mean and input_std
+            maf_u = self.maf.mean(np.array([input_mean]),np.array([input_std]))
+            self.T = min(10e3, 100/maf_u) #T = desired number of spikes / mean firing rate
+        
         num_timesteps = int(self.T/self.dt)
         
         tref = np.zeros(self.num_neurons) #tracker for refractory period
@@ -214,7 +225,7 @@ class InteNFire():
         
         return mu, sig
 
-def input_output_anlaysis_2neurons():
+def input_output_anlaysis_corr():
     inf = InteNFire(T = 1e3, num_neurons = 2)
     u = np.array([1,1])
     s = np.array([1,1])
@@ -236,48 +247,37 @@ def input_output_anlaysis_2neurons():
     
     
 def input_output_anlaysis(input_type):
-    inf = InteNFire(T = 1e3, num_neurons = 1000) #time unit: ms        
+    inf = InteNFire(num_neurons = 1000) #time unit: ms        
     #N = 31
     #u = np.linspace(-0.5,2.5,N)
     N = 51
     u = np.linspace(-0.5,2.5,N)
-    s = np.ones(N)*1.5
+    s = np.array([1,2])#np.ones(N)*1.5
     
-    emp_u = np.zeros(N)
-    emp_s = np.zeros(N)
+    emp_u = np.zeros((N,s.size))
+    emp_s = np.zeros((N,s.size))
     
     start_time = time.time()
     for i in range(N):
-        SpkTime, _, _ = inf.run(input_mean = u[i], input_std = s[i], input_type = input_type, show_message = False)
-        emp_u[i], emp_s[i] = inf.empirical_maf(SpkTime)    
-                
+        for j in range(s.size):
+            SpkTime, _, _ = inf.run(T = None, input_mean = u[i], input_std = s[j], input_type = input_type, show_message = False)
+            emp_u[i,j], emp_s[i,j] = inf.empirical_maf(SpkTime)    
+                    
         progress = (i+1)/N*100
         elapsed_time = (time.time()-start_time)/60
         print('Progress: {:.2f}%; Time elapsed: {:.2f} min'.format(progress, elapsed_time ))
         
     
     maf = MomentActivation()
-    maf_u = maf.mean(u,s)
-    maf_s, _ = maf.std(u,s)
     
-    fig = plt.figure()
-    ax1 = fig.add_subplot(2,1,1)    
-    ax1.plot(u, maf_u)
-    ax1.plot(u, emp_u, '.')
-    ax1.set_xlabel('Mean Input Current')
-    ax1.set_ylabel('Firing Variability')
-    #ax1.set_title('Mean')
-    #cbar1 = fig.colorbar(img1)
-    #cbar1.set_label('kHz')#, rotation=270)
+    maf_u = np.zeros((N,s.size))
+    maf_s = np.zeros((N,s.size))
     
-    ax2 = fig.add_subplot(2,1,2)    
-    ax2.plot(u, maf_s)
-    ax2.plot(u, emp_s, '.')
-    ax2.set_xlabel('Mean Input Current')
-    ax2.set_ylabel('Firing Variability')
+    for j in range(s.size):
+        maf_u[:,j] = maf.mean(u,s[j]*np.ones(N))
+        maf_s[:,j], _ = maf.std(u,s[j]*np.ones(N))
     
-    
-    return emp_u, emp_s, maf_u, maf_s
+    return emp_u, emp_s, maf_u, maf_s, u, s
     
 
 def simple_demo(input_type):
@@ -298,10 +298,12 @@ def simple_demo_two_neurons():
         
 
 if __name__=='__main__':
-    #input_rho, output_rho = input_output_anlaysis_2neurons()
+    #input_rho, output_rho = input_output_anlaysis_corr()
     #simple_demo_two_neurons()
     #simple_demo(input_type = 'gaussian' )
-    input_output_anlaysis(input_type = 'spike')
+    out = input_output_anlaysis(input_type = 'spike')
     #inf = simple_demo(input_type = 'spike' )
     #runfile('./dev_tools/validate_w_spiking_neuron.py', wdir='./')
+    
+    #np.save('validate_w_spk_neuron',out)
         
