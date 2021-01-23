@@ -141,6 +141,7 @@ class InteNFire():
         
         tref = np.zeros(self.num_neurons) #tracker for refractory period
         v = np.random.rand(self.num_neurons)*self.Vth #initial voltage
+        #v = np.zeros(self.num_neurons)
         
         SpkTime = [[] for i in range(self.num_neurons)]
         t = np.arange(0, self.T , self.dt)
@@ -236,10 +237,10 @@ class InteNFire():
         
         return mu, sig
 
-def input_output_analysis_corr(mean1 = 1, std1 = 1, ntrials = 100):
+def input_output_analysis_corr(mean1 = 1, std1 = 1, mean2 = 1, std2 = 1, ntrials = 1000):
     inf = InteNFire(num_neurons = 2*ntrials)
-    u = np.array([mean1,1])    
-    s = np.array([std1,1])
+    u = np.array([mean1,mean2])    
+    s = np.array([std1,std2])
     rho = np.linspace(-1,1,11)
     
     #calculate analytical result
@@ -264,7 +265,8 @@ def input_output_analysis_corr(mean1 = 1, std1 = 1, ntrials = 100):
     
     return rho, output_rho, maf_rho
             
-def batch_anlaysis_corr():
+def batch_analysis_corr():
+    '''Fix mean2=std2=1 and vary mean1 and st1'''
     #u = np.array([0, 0.5, 1]) #each run takes about 3.5 min
     #s = np.array([0.5, 3, 10])
     u = np.linspace(0,2,11)
@@ -284,7 +286,26 @@ def batch_anlaysis_corr():
     #plt.plot(rho_in, rho_maf)
     np.save('validate_corr_4',{'rho_in':rho_in,'rho_out':rho_out,'rho_maf':rho_maf,'u':u,'s':s})
     return rho_in, rho_out, rho_maf, u, s 
-        
+
+def batch_analysis_corr2():
+    '''Let mean1=mean2 and std1=std2, vary both.'''
+    u = np.linspace(0,2,11)
+    s = np.linspace(0,2,11)
+    
+    rho_out = np.zeros((11,len(u),len(s)))
+    rho_maf = np.zeros((11,len(u),len(s)))
+    
+    start_time = time.time()
+    
+    for i in range(len(u)):
+        for j in range(len(s)):
+            rho_in, rho_out[:,i,j], rho_maf[:,i,j] = input_output_analysis_corr(mean1 = u[i], mean2 = u[i], std1=s[j], std2 = s[j], ntrials = 1000)
+    
+            print('Time elapsed: {} min'.format( (-start_time + time.time())/60 ) )    
+    #plt.plot(rho_in, rho_out, '.')
+    #plt.plot(rho_in, rho_maf)
+    np.save('validate_corr_5',{'rho_in':rho_in,'rho_out':rho_out,'rho_maf':rho_maf,'u':u,'s':s})
+    return rho_in, rho_out, rho_maf, u, s         
     
 def input_output_anlaysis(input_type):
     inf = InteNFire(num_neurons = 1000) #time unit: ms        
@@ -321,25 +342,25 @@ def input_output_anlaysis(input_type):
     
 
 def simple_demo(input_type):
-    inf = InteNFire(T = 1e3, num_neurons = 100) #time unit: ms    
+    inf = InteNFire( num_neurons = 100) #time unit: ms    
     
-    SpkTime, V, t = inf.run(input_type = input_type, record_v = True, show_message = True)
+    SpkTime, V, t = inf.run(T = 1e3,input_type = input_type, record_v = True, show_message = True)
     plt.plot(t,V[0,:])
     plt.plot(SpkTime[0],[51]*len(SpkTime[0]),'.')        
     return inf
 
 def simple_demo_two_neurons():
-    inf = InteNFire(T = 1e3, num_neurons = 2) #time unit: ms    
+    inf = InteNFire( num_neurons = 1000) #time unit: ms    
     u = np.array([1,1])
     s = np.array([1,1])
-    SpkTime, V, t = inf.run(input_mean = u, input_std = s, input_corr = -0.1, input_type = 'bivariate_gaussian', record_v = True, show_message = True)
+    SpkTime, V, t = inf.run(T = 1e3, input_mean = u, input_std = s, input_corr = -0.1, input_type = 'bivariate_gaussian', record_v = True, show_message = True)
     plt.plot(t,V[0,:])
     plt.plot(t,V[1,:])
         
 
 if __name__=='__main__':
-    #input_rho, output_rho, maf_rho = input_output_anlaysis_corr()
-    rho_in, rho_out, rho_maf, u, s = batch_anlaysis_corr()
+    #input_rho, output_rho, maf_rho = input_output_analysis_corr(mean1 = 0.6, mean2 = 0.6)
+    rho_in, rho_out, rho_maf, u, s = batch_analysis_corr2()
     #simple_demo_two_neurons()
     #simple_demo(input_type = 'gaussian' )
     #out = input_output_anlaysis(input_type = 'spike')
