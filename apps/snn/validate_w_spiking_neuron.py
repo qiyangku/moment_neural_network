@@ -126,7 +126,7 @@ class InteNFire():
             
         return input_current
     
-    def run(self, T = None, input_mean = 1, input_std = 1, input_corr = None, input_type = 'gaussian', record_v = False, show_message = False):
+    def run(self, T = None, input_mean = 1, input_std = 1, input_corr = None, ntrials = None, input_type = 'gaussian', record_v = False, show_message = False):
         '''Simulate integrate and fire neurons'''
         
         if T:
@@ -169,6 +169,17 @@ class InteNFire():
                 input_current = self.input_gaussian_current(mean, std)
             elif input_type == 'bivariate_gaussian':
                 corr = np.eye(2) + rho*(1-np.eye(2))
+                cov = corr*std[:2].reshape(2,1)*std[:2].reshape(1,2)
+                input_current = np.random.multivariate_normal(mean[:2]*self.dt, cov*self.dt, size = ntrials) #output is ntrials-by-2
+                input_current = input_current.flatten()
+                #corr = np.kron( np.eye( int(mean.size/2) ), corr) #create block diagonal matrix
+                #input_current = self.input_gaussian_current(mean, std, corr = corr)
+                #don't do this too slow.
+                # generate bivariate gaussian of shape (2, num of samples) then reshape it
+                
+                
+            elif input_type == 'multivariate_gaussian':
+                corr = np.eye(self.num_neurons) + rho*(1-np.eye(self.num_neurons))
                 input_current = self.input_gaussian_current(mean, std, corr = corr)
             elif input_type == 'spike':
                 #input_current = self.input_synaptic_current(i*self.dt, spk_time)
@@ -225,26 +236,55 @@ class InteNFire():
         
         return mu, sig
 
-def input_output_anlaysis_corr():
-    inf = InteNFire(T = 1e3, num_neurons = 2)
-    u = np.array([1,1])
-    s = np.array([1,1])
+def input_output_analysis_corr(mean1 = 1, std1 = 1, ntrials = 100):
+    inf = InteNFire(num_neurons = 2*ntrials)
+    u = np.array([mean1,1])    
+    s = np.array([std1,1])
     rho = np.linspace(-1,1,11)
-    output_rho = rho.copy()
-    ntrials = 100
+    
+    #calculate analytical result
+    maf_u = inf.maf.mean(u,s)
+    maf_s, _ = inf.maf.std(u,s)
+    maf_chi = inf.maf.chi(u,s)
+    maf_rho = maf_chi[0]*maf_chi[1]*rho
+    T = min(10e3, 100/min(maf_u)) # adaptive simulation time
+    print('Using simulation time (ms):',T)
+    #simulation result of IF neuron
+    u = np.tile(u,ntrials)
+    s = np.tile(s,ntrials)
+    
+    output_rho = rho.copy()    
     for i in range(len(rho)):
-        spk_count = np.zeros((ntrials,2))
-        for j in range(ntrials):
-            SpkTime, _, _ = inf.run(input_mean = u, input_std = s, input_corr = rho[i], input_type = 'bivariate_gaussian')
-            spk_count[j,0] = len(SpkTime[0])
-            spk_count[j,1] = len(SpkTime[1])
-            print('Progress: i={}/{}, j={}/{}'.format(i,len(rho),j,ntrials))
+        #spk_count = np.zeros((ntrials,2))
+        SpkTime, _, _ = inf.run(T = T, input_mean = u, input_std = s, input_corr = rho[i], input_type = 'bivariate_gaussian', ntrials = ntrials)        
+        spk_count = np.array([ len(k) for k in SpkTime]).reshape((ntrials,2))
+        print('Progress: i={}/{}'.format(i,len(rho)))
         output_rho[i] = np.corrcoef( spk_count[:,0], spk_count[:,1] )[0,1]
-    plt.plot(rho, output_rho)
     
-    return rho, output_rho
+    
+    return rho, output_rho, maf_rho
             
+def batch_anlaysis_corr():
+    #u = np.array([0, 0.5, 1]) #each run takes about 3.5 min
+    #s = np.array([0.5, 3, 10])
+    u = np.linspace(0,2,11)
+    s = np.linspace(0,5,11)
     
+    rho_out = np.zeros((11,len(u),len(s)))
+    rho_maf = np.zeros((11,len(u),len(s)))
+    
+    start_time = time.time()
+    
+    for i in range(len(u)):
+        for j in range(len(s)):
+            rho_in, rho_out[:,i,j], rho_maf[:,i,j] = input_output_analysis_corr(mean1 = u[i], std1 = s[j], ntrials = 1000)
+    
+            print('Time elapsed: {} min'.format( (-start_time + time.time())/60 ) )    
+    #plt.plot(rho_in, rho_out, '.')
+    #plt.plot(rho_in, rho_maf)
+    np.save('validate_corr_4',{'rho_in':rho_in,'rho_out':rho_out,'rho_maf':rho_maf,'u':u,'s':s})
+    return rho_in, rho_out, rho_maf, u, s 
+        
     
 def input_output_anlaysis(input_type):
     inf = InteNFire(num_neurons = 1000) #time unit: ms        
@@ -268,14 +308,14 @@ def input_output_anlaysis(input_type):
         print('Progress: {:.2f}%; Time elapsed: {:.2f} min'.format(progress, elapsed_time ))
         
     
-    maf = MomentActivation()
+    #maf = MomentActivation()
     
     maf_u = np.zeros((N,s.size))
     maf_s = np.zeros((N,s.size))
     
     for j in range(s.size):
-        maf_u[:,j] = maf.mean(u,s[j]*np.ones(N))
-        maf_s[:,j], _ = maf.std(u,s[j]*np.ones(N))
+        maf_u[:,j] = inf.maf.mean(u,s[j]*np.ones(N))
+        maf_s[:,j], _ = inf.maf.std(u,s[j]*np.ones(N))
     
     return emp_u, emp_s, maf_u, maf_s, u, s
     
@@ -298,12 +338,13 @@ def simple_demo_two_neurons():
         
 
 if __name__=='__main__':
-    #input_rho, output_rho = input_output_anlaysis_corr()
+    #input_rho, output_rho, maf_rho = input_output_anlaysis_corr()
+    rho_in, rho_out, rho_maf, u, s = batch_anlaysis_corr()
     #simple_demo_two_neurons()
     #simple_demo(input_type = 'gaussian' )
-    out = input_output_anlaysis(input_type = 'spike')
+    #out = input_output_anlaysis(input_type = 'spike')
     #inf = simple_demo(input_type = 'spike' )
-    #runfile('./dev_tools/validate_w_spiking_neuron.py', wdir='./')
+    #runfile('./apps/snn/validate_w_spiking_neuron.py', wdir='./')
     
     #np.save('validate_w_spk_neuron',out)
         
