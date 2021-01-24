@@ -111,11 +111,20 @@ class Dataset(torch.utils.data.Dataset):
         target_std = torch.zeros(self.sample_size, self.output_dim)
         target_corr = torch.zeros(self.sample_size, self.output_dim, self.output_dim)
         
-        patch = torch.zeros(self.input_dim)        
-        patch[:int(self.input_dim/4)] = 1.0        
-        patch_2d = torch.eye(self.input_dim)
-        patch_2d[:int(self.input_dim/4), :int(self.input_dim/4)] = self.fixed_rho
-        patch_2d.fill_diagonal_(1.0)
+        #patch = torch.zeros(self.input_dim)        
+        #patch[:int(self.input_dim/4)] = 1.0        
+        x = torch.arange(0,2*np.pi,  2*np.pi/self.input_dim)        
+        d = 0.7
+        patch = torch.exp( (torch.cos(x)-1)/d/d);  #von Mises
+        
+        #patch_2d = torch.eye(self.input_dim)
+        #patch_2d[:int(self.input_dim/4), :int(self.input_dim/4)] = self.fixed_rho
+        #patch_2d.fill_diagonal_(1.0)
+        corr_tmp = torch.zeros(self.input_dim, self.input_dim)
+        for i in range(self.input_dim):
+            corr_tmp[i,:] = patch.roll(i)*self.fixed_rho
+        corr_tmp.fill_diagonal_(1.0)
+        
         
         for i in range(self.sample_size):
             rand_shift = int(torch.randint(self.input_dim, (1,)))
@@ -132,7 +141,8 @@ class Dataset(torch.utils.data.Dataset):
             #target output has fixed correlation
             target_mean[i,:] = patch.roll( rand_shift )*0.1
             target_std[i,:] = patch.roll( rand_shift)*0.1
-            target_corr[i,:,:] = patch_2d.roll( (rand_shift,rand_shift) , (0,1))
+            #target_corr[i,:,:] = patch_2d.roll( (rand_shift,rand_shift) , (0,1))
+            target_corr[i,:,:] = corr_tmp
         
         #use external input
         if ext_input_type == 'persistent':            

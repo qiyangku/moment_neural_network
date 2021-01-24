@@ -1,4 +1,3 @@
-#from Mnn_Core.mnn_pytorch import *
 from Mnn_Core.mnn_pytorch import *
 import numpy as np
 import torch
@@ -6,8 +5,8 @@ import time
 from torch.utils.tensorboard import SummaryWriter
 #from ray import tune
 import json
-from apps.regression.data import *
-from apps.regression.visualization_tools import *
+from apps.synfire.synfire_data import *
+#from apps.synfire.synfire_visualization_tools import *
 
 torch.set_default_tensor_type(torch.DoubleTensor)
 #seed = 5
@@ -354,7 +353,7 @@ class RecurrentNN():
 
 if __name__ == "__main__":    
 
-    config = {'sample_size': 32*500,
+    config = {'sample_size': 32*100,
               'batch_size': 32,
               'num_epoch': 50,
               'lr': 0.01,
@@ -380,11 +379,11 @@ if __name__ == "__main__":
     model = RecurrentNN.train(config)
     
     file_name = config['trial_id']
-    torch.save(model.state_dict(), './data/synfire/{}.pt'.format(file_name) ) #save result by time stamp
+    torch.save(model.checkpoint, './data/synfire/{}.pt'.format(file_name) ) #save result by time stamp
     with open('./data/synfire/{}_config.json'.format(file_name),'w') as f:
         json.dump(config,f)
     
-    #runfile('./apps/regression/recurrent_nn.py', wdir='./')
+    #runfile('./apps/synfire/recurrent_nn.py', wdir='./')
     
 # # Example snippet
 # state = init_state
