@@ -43,7 +43,8 @@ def plot_maf():
     ax1.legend()#['IF neuron','Moment Activation'])
 
 def plot_corr():
-    file = './data/snn/validate_corr_4.npy'
+    #file = './data/snn/validate_corr_4.npy'
+    file = './data/snn/validate_corr_5.npy'
     dat = np.load(file, allow_pickle = True).item(0)
     
     fig = plt.figure()
@@ -63,8 +64,8 @@ def plot_corr():
             ax.set_ylim(-1,1)
             ax.set_xticks([])
             ax.set_yticks([])
-            label_mu = r'$\bar{\mu}=$'+str( np.round(dat['u'][i],1)  )
-            label_sig = r'$\bar{\sigma}=$'+str(dat['s'][j])
+            label_mu = r'$\bar{\mu}=$'+'{:.1f}'.format( dat['u'][i] )
+            label_sig = r'$\bar{\sigma}=$'+'{:.1f}'.format(dat['s'][j])
             if i == 0:
                 ax.set_title(label_sig)
             if j == 0:
@@ -93,7 +94,28 @@ def plot_corr():
                     ax2.set_title(label_sig)
                 if j == 0:
                     ax2.set_ylabel(label_mu)
-            
+    elif file == './data/snn/validate_corr_5.npy':
+        fig_rep = plt.figure()
+        n = 0
+        for i in range(4):
+            for j in range(4):
+                n += 1
+                ax2 = fig_rep.add_subplot(4,4,n)
+                ax2.plot(dat['rho_in'], dat['rho_out'][:,i,j*2+3], '.')
+                ax2.plot(dat['rho_in'], dat['rho_maf'][:,i,j*2+3])
+                ax2.axis('equal')
+                ax2.set_xlim(-1,1)
+                ax2.set_ylim(-1,1)
+                if i < 3:
+                    ax2.set_xticks([])
+                if j > 0:
+                    ax2.set_yticks([])
+                label_mu = r'$\bar{\mu}=$'+'{:.1f}'.format( dat['u'][i] )
+                label_sig = r'$\bar{\sigma}=$'+'{:.1f}'.format(dat['s'][j*2+3])
+                if i == 0:
+                    ax2.set_title(label_sig)
+                if j == 0:
+                    ax2.set_ylabel(label_mu)
             
 if __name__=='__main__':
     plot_corr()
