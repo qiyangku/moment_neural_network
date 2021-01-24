@@ -39,10 +39,12 @@ class Dataset(torch.utils.data.Dataset):
         self.fixed_rho = fixed_rho
         self.input_dim = input_dim
         self.output_dim = output_dim
+        
         if dataset_name == 'cue_combo':          
             self.cue_combination(with_corr = with_corr)
         elif dataset_name == 'synfire':
-            self.synfire()
+            #depreciated. please generate the dataset from run script
+            pass
         elif dataset_name == 'butterfly':
             self.butterfly()
         else:
@@ -98,15 +100,12 @@ class Dataset(torch.utils.data.Dataset):
         
         return
     
-    def synfire(self):
+    def synfire(self, num_timesteps = None, ext_input_type = None):
         
         input_mean = torch.zeros(self.sample_size, self.input_dim)
         input_std = torch.zeros(self.sample_size, self.input_dim)
         input_corr = torch.zeros(self.sample_size, self.input_dim, self.input_dim)
         
-        
-        input_mean_ext = 0.1*torch.randn(self.sample_size, self.input_dim)  #uniform random external input
-        input_std_ext = 0.2*torch.rand(self.sample_size, self.input_dim)
         
         target_mean = torch.zeros(self.sample_size, self.output_dim)
         target_std = torch.zeros(self.sample_size, self.output_dim)
@@ -135,8 +134,26 @@ class Dataset(torch.utils.data.Dataset):
             target_std[i,:] = patch.roll( rand_shift)*0.1
             target_corr[i,:,:] = patch_2d.roll( (rand_shift,rand_shift) , (0,1))
         
-        #input_mean_ext = input_mean.clone()
-        #input_std_ext = input_std.clone()
+        #use external input
+        if ext_input_type == 'persistent':            
+            input_mean_ext = input_mean.clone().unsqueeze(-1).repeat(1, 1, num_timesteps)
+            input_std_ext = input_std.clone().unsqueeze(-1).repeat(1, 1, num_timesteps)
+        elif ext_input_type == 'transient':
+            input_mean_ext = 0.1*torch.randn(self.sample_size, self.input_dim, num_timesteps)  #uniform random external input
+            input_std_ext = 0.2*torch.rand(self.sample_size, self.input_dim, num_timesteps)   
+            input_mean_ext[:,:,0] = input_mean.clone()
+            input_mean_ext[:,:,1] = input_std.clone()            
+        elif ext_input_type == 'fadeoff':
+            #use a loop for the sake of readability.
+            input_mean_ext = 0.1*torch.randn(self.sample_size, self.input_dim, num_timesteps)  #uniform random external input
+            input_std_ext = 0.2*torch.rand(self.sample_size, self.input_dim, num_timesteps)       
+            for k in range(int(num_timesteps/2)): #fade off the input for the first half of time steps
+                amp = 1 - k/int(num_timesteps/2)
+                input_mean_ext[:,:,k] += input_mean.clone()*amp
+                input_std_ext[:,:,k] += input_std.clone()*amp
+        else:                
+            input_mean_ext = 0.1*torch.randn(self.sample_size, self.input_dim, num_timesteps)  #uniform random external input
+            input_std_ext = 0.2*torch.rand(self.sample_size, self.input_dim, num_timesteps)    
         
         self.input_data = list(zip(input_mean, input_std, input_corr, input_mean_ext, input_std_ext))
         self.target_data = list(zip(target_mean, target_std, target_corr))
