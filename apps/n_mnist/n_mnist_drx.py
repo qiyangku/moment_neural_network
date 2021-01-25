@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
-from Mnn_Core.mnn_modules import *
 import os
 import pickle
-from apps.n_mnist import spikeFileIO
-import matplotlib.pyplot as plt
+from Mnn_Core.mnn_modules import *
 
 
-class Event:
+class Event():
     '''
     This class provides a way to store, read, write and visualize spike event.
 
@@ -113,7 +111,7 @@ def raw2Tensor(TD: Event, frameRate=60):
 
 
 class nmistDataset(torch.utils.data.Dataset):
-    def __init__(self, datasetPath="D:/Data_repos/N-MNIST/data/", mode: str="train"):
+    def __init__(self, datasetPath="D:/Data_repos/N-MNIST/data/", mode: str = "train"):
         super(nmistDataset, self).__init__()
         self.path = datasetPath
         self.mode = mode
@@ -122,14 +120,14 @@ class nmistDataset(torch.utils.data.Dataset):
         self._fetch_files_path()
 
     def _fetch_files_path(self):
-        data_dir = self.path + self.mode
+        data_dir = self.path + self.mode + "/"
         files_name = []
         labels = []
         for i in os.listdir(data_dir):
-            next_dir = data_dir + "/" + i
+            next_dir = data_dir + i
             for j in os.listdir(next_dir):
                 labels.append(i)
-                files_name.append(data_dir + "/" + i + "/" + j)
+                files_name.append(data_dir + i + "/" + j)
         self.file_path = files_name
         self.labels = labels
 
@@ -172,8 +170,8 @@ class nmistDataset(torch.utils.data.Dataset):
 class Mnn_MLP_with_Corr(torch.nn.Module):
     def __init__(self):
         super(Mnn_MLP_with_Corr, self).__init__()
-        self.layer1 = Mnn_Layer_with_Rho(34*34, 34*34)
-        self.layer2 = Mnn_Linear_Corr(34*34, 10, bias=True)
+        self.layer1 = Mnn_Layer_with_Rho(34 * 34, 34 * 34)
+        self.layer2 = Mnn_Linear_Corr(34 * 34, 10, bias=True)
 
     def forward(self, ubar, sbar, rho):
         ubar, sbar, rho = self.layer1(ubar, sbar, rho)
@@ -199,7 +197,7 @@ class N_Mnist_Model_Training:
                                                         batch_size=self.BATCH, shuffle=True)
 
         self.test_loader = torch.utils.data.DataLoader(dataset=nmistDataset(datasetPath=self.file_path, mode="test"),
-            batch_size=self.BATCH, shuffle=True)
+                                                       batch_size=self.BATCH, shuffle=True)
 
     def training_mlp_with_corr(self, fix_seed=True, save_op=True, save_name="n_mnist_mlp_corr.pt"):
         if fix_seed:
@@ -216,7 +214,7 @@ class N_Mnist_Model_Training:
             for batch_idx, (mean, std, rho, target) in enumerate(self.train_loader):
                 optimizer.zero_grad()
                 out1, out2, out3 = net(mean, std, rho)
-                loss = criterion(out1, target)
+                loss = criterion(self.pred_func_fano(out1, out2), target)
                 loss.backward()
                 optimizer.step()
                 if batch_idx % self.log_interval == 0:
@@ -227,6 +225,9 @@ class N_Mnist_Model_Training:
         self.model = net
         if save_op:
             torch.save(net, save_name)
+
+    def pred_func_fano(self, out1, out2):
+        return torch.abs(out1) / (out2 + self.eps)
 
     def test_mlp_corr_model(self, model_name="n_mnist_mlp_corr.pt"):
         if self.model is None:
@@ -242,12 +243,14 @@ class N_Mnist_Model_Training:
         with torch.no_grad():
             for mean, std, rho, target in self.test_loader:
                 out1, out2, out3 = net(mean, std, rho)
-                test_loss += F.cross_entropy(out1, target, reduction="sum").item()
-                pred = out1.data.max(1, keepdim=True)[1]
+                pred = self.pred_func_fano(out1, out2)
+                test_loss += F.cross_entropy(pred, target, reduction="sum").item()
+                pred = pred.data.max(1, keepdim=True)[1]
+
                 correct += torch.sum(pred.eq(target.data.view_as(pred)))
         test_loss /= len(self.test_loader.dataset)
 
-        print('\nTest set: Avg. loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
+        print('\nTrain set: Avg. loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
             test_loss, correct, len(self.test_loader.dataset),
             100. * correct / len(self.test_loader.dataset)))
 
@@ -304,102 +307,20 @@ class N_Mnist_Model_Training:
                     wrong_pred.append(pred)
 
         print('\nTest set: Accuracy: {}/{} ({:.0f}%)\n'.format(correct, len(data_set), 100. * correct / len(data_set)))
-        with open("apps/n_mnist/wrong_indx.bin", "wb") as f:
+        with open("wrong_indx.bin", "wb") as f:
             pickle.dump(wrong_indx, f)
-        with open("apps/n_mnist/wrong_pred.bin", "wb") as f:
+        with open("wrong_pred.bin", "wb") as f:
             pickle.dump(wrong_pred, f)
 
-    @staticmethod
-    def plot_event_static_info(pack, cmap="coolwarm", save_op=False, save_name=None, show_im=True):
-        u, s, r, t = pack
-        nrows = 1
-        ncols = 3
-        fig = plt.figure(figsize=(ncols*5, nrows*5))
-        fig.subplots_adjust(left=0.05, bottom=0.05, right=0.95, top=0.95, hspace=0.1, wspace=0.1)
-        ax = fig.add_subplot(nrows, ncols, 1)
-        im = ax.imshow(u.view(34, 34), cmap=cmap)
-        ax.set_title("mean")
-        plt.colorbar(im)
 
-        ax = fig.add_subplot(nrows, ncols, 2)
-        im = ax.imshow(s.view(34, 34), cmap=cmap)
-        ax.set_title("std")
-        plt.colorbar(im)
-
-        ax = fig.add_subplot(nrows, ncols, 3)
-        im = ax.imshow(r, cmap=cmap)
-        ax.set_title("rho")
-        plt.colorbar(im)
-
-        plt.suptitle("label: {:}".format(t))
-        if save_op:
-            if save_name is None:
-                fig.savefig("preprocessed_label_"+str(t)+".png")
-            else:
-                fig.savefig(save_name)
-        if show_im:
-            plt.show()
-
-    @staticmethod
-    def plt_output_case(model_name, cmap="coolwarm"):
-        data = nmistDataset()
-        samples_idx = []
-        check = []
-        for i in range(len(data)):
-            if len(samples_idx) == 10:
-                break
-            if data.labels[i] not in check:
-                samples_idx.append(i)
-                check.append(data.labels[i])
-            else:
-                continue
-        # sample indx: [0, 5766, 12359, 18149, 24109, 29811, 35060, 40808, 46929, 52611]
-        net = torch.load(model_name)
-        net.eval()
-        with torch.no_grad():
-            for i in samples_idx:
-                u, s, r, t = data[i]
-                u = u.view(1, -1)
-                s = s.view(1, -1)
-                r = r.view(1, 34 * 34, -1)
-                out1, out2, out3 = net(u, s, r)
-                pred = (out1/(out2+1e-8)).data.max(1, keepdim=True)[1]
-                fig = plt.figure(figsize=(15, 5))
-                fig.subplots_adjust(left=0.05, bottom=0.05, right=0.95, top=0.9, hspace=0.1, wspace=0.1)
-                ax = fig.add_subplot(1, 3, 1)
-                ax.plot(out1.detach().numpy().reshape(-1))
-                ax.set_title("output mean")
-
-                ax = fig.add_subplot(1, 3, 2)
-                ax.plot(out2.detach().numpy().reshape(-1))
-                ax.set_title("output std")
-
-                ax = fig.add_subplot(1, 3, 3)
-                im = ax.imshow(out3.detach().numpy().reshape(10, 10), cmap=cmap)
-                ax.set_title("output rho")
-                plt.colorbar(im)
-
-                plt.suptitle("predict: {:}, ground true: {:}".format(pred.item(), t))
-                fig.savefig("output_label_{:}.png".format(t))
-
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     with open("wrong_indx.bin", "rb") as f:
         wrong_indx = pickle.load(f)
     with open("wrong_pred.bin", "rb") as f:
         wrong_pred = pickle.load(f)
     dataset = nmistDataset(mode="Test")
-    loc = 1
+    loc = 10
     indx = wrong_indx[loc]
-    print("label: {:}, pred:{:}".format(dataset.labels[indx], wrong_pred[loc]))
     td = read2Dspikes(dataset.file_path[indx])
-    anim = spikeFileIO.showTD(td, repeat=True, frameRate=60)
-    anim.save("case1.mp4")
-
-
-# 118, 1224, 2008, 3082, 4653, 4889, 5774, 7602, 8545, 
-
-
-
 
 

@@ -607,9 +607,9 @@ def showTD(TD, fig=None, frameRate=24, preComputeFrames=True, repeat=False):
 
     if fig is None:    fig = plt.figure()
     if TD.dim == 1:
-        _showTD1D(TD, fig, frameRate=frameRate, preComputeFrames=preComputeFrames, repeat=repeat)
+        return _showTD1D(TD, fig, frameRate=frameRate, preComputeFrames=preComputeFrames, repeat=repeat)
     else:
-        _showTD2D(TD, fig, frameRate=frameRate, preComputeFrames=preComputeFrames, repeat=repeat)
+        return _showTD2D(TD, fig, frameRate=frameRate, preComputeFrames=preComputeFrames, repeat=repeat)
 
 
 def animTD(TD, fig=None, frameRate=24, preComputeFrames=True, repeat=True):
@@ -640,5 +640,3 @@ def animTD(TD, fig=None, frameRate=24, preComputeFrames=True, repeat=True):
 # 	addressEvent = np.argwhere(spikeMat > 0)
 # 	# print(addressEvent.shape)
 # 	return event(addressEvent[:,2], addressEvent[:,1], addressEvent[:,0], addressEvent[:,3] * samplingTime)
-
-
