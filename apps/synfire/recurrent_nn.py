@@ -221,17 +221,14 @@ class RecurrentNN():
         else:
             model = Renoir(max_time_steps = config['max_time_steps'], hidden_layer_size = config['hidden_layer_size'], input_size = input_size, output_size = output_size)        
             
-        train_dataset = Dataset(config['dataset_name'], sample_size = sample_size, input_dim = input_size, output_dim = output_size, with_corr = config['with_corr'], fixed_rho = config['fixed_rho'])
-        train_dataset.synfire(num_timesteps = config['max_time_steps'], ext_input_type = ext_input_type)
-        train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size = batch_size)        
+        train_dataset = SynfireDataset(config)
+        train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size = batch_size, shuffle=False)        
     
         model.target_transform = train_dataset.transform
         
-        validation_dataset = Dataset(config['dataset_name'], sample_size = 32, input_dim = input_size, output_dim = output_size, transform = train_dataset.transform, with_corr = config['with_corr'], fixed_rho = config['fixed_rho'] )          
-        validation_dataset.synfire(num_timesteps = config['max_time_steps'], ext_input_type = ext_input_type)
-        validation_dataloader = torch.utils.data.DataLoader(validation_dataset, batch_size = 32)
-            
-        
+        validation_dataset = SynfireDataset(config)        
+        validation_dataloader = torch.utils.data.DataLoader(validation_dataset, batch_size = 32, shuffle=False)
+         
         #model.target_affine = target_affine
         
         #param_container.set_ratio(0.1) # E/I balance. Mostly affect initialization. Mild value seems to improve result.
@@ -360,10 +357,10 @@ if __name__ == "__main__":
               'momentum': 0.9,
               'optimizer_name': 'Adam',
               'num_hidden_layers': None,
-              'max_time_steps': 5,
-              'input_size': 32,
-              'output_size': 32,
-              'hidden_layer_size': 32,
+              'max_time_steps': 10,
+              'input_size': 128,
+              'output_size': 128,
+              'hidden_layer_size': 128,
               'trial_id': int(time.time()),
               'tensorboard': True,
               'with_corr': True,
