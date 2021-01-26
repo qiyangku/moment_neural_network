@@ -117,25 +117,29 @@ class Ann_Model_Training:
                                100 * batch_idx / len(self.train_loader), loss.item()))
         return model
 
-    def test_process(self, net):
-        if self.test_loader is None:
+    def test_process(self, net, mode="Test"):
+        if self.test_loader is None or self.train_loader is None:
             self.fetch_dataset()
+        if mode == "Test":
+            data_loader = self.test_loader
+        else:
+            data_loader = self.train_loader
         net.eval()
         test_loss = 0
         correct = 0
 
         with torch.no_grad():
-            for data, target in self.test_loader:
+            for data, target in data_loader:
                 data = data.view(data.size(0), -1)
                 out1 = net(data)
                 test_loss += torch.nn.functional.cross_entropy(out1, target, reduction="sum").item()
                 pred = out1.data.max(1, keepdim=True)[1]
                 correct += torch.sum(pred.eq(target.data.view_as(pred)))
 
-        test_loss /= len(self.test_loader.dataset)
-        ans = '\n Model: {:} \n Test set: Avg. loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
-            str(type(net)), test_loss, correct, len(self.test_loader.dataset),
-            100. * correct / len(self.test_loader.dataset))
+        test_loss /= len(data_loader.dataset)
+        ans = '\n Model: {:} \n {:} set: Avg. loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
+            str(type(net)), mode, test_loss, correct, len(data_loader.dataset),
+            100. * correct / len(data_loader.dataset))
         print(ans)
         return ans
 
@@ -151,47 +155,75 @@ class Ann_Model_Training:
         net1 = self.train_process(net1, optimizer=optimizer, criterion=criterion)
 
         print("\n------ MNIST MLP_SIGMOID Start------")
-        net4 = MLP_Sigmoid()
-        optimizer = torch.optim.Adam(net4.parameters(), lr=self.learning_rate)
-        net4.train()
-        criterion = torch.nn.CrossEntropyLoss()
-        print("\n------ MNIST MLP_SIGMOID Start------")
-        net4 = self.train_process(net4, optimizer=optimizer, criterion=criterion)
-
-        net2 = MLP_Relu_Bn()
+        net2 = MLP_Sigmoid()
         optimizer = torch.optim.Adam(net2.parameters(), lr=self.learning_rate)
         net2.train()
         criterion = torch.nn.CrossEntropyLoss()
-        print("\n------ MNIST MLP_Relu_Bn Start------")
+        print("\n------ MNIST MLP_SIGMOID Start------")
         net2 = self.train_process(net2, optimizer=optimizer, criterion=criterion)
 
-        net3 = MLP_Relu()
+        net3 = MLP_Relu_Bn()
         optimizer = torch.optim.Adam(net3.parameters(), lr=self.learning_rate)
         net3.train()
         criterion = torch.nn.CrossEntropyLoss()
-        print("------ MNIST MLP_Relu_Bn Start------")
+        print("\n------ MNIST MLP_Relu_Bn Start------")
         net3 = self.train_process(net3, optimizer=optimizer, criterion=criterion)
 
-        if save_op:
-            torch.save(net1.state_dict(), "mlp_sigmoid.pt")
-            torch.save(net4.state_dict(), "mlp_sigmoid.pt")
-            torch.save(net2.state_dict(), "mlp_relu_bn.pt")
-            torch.save(net3.state_dict(), "mlp_relu.pt")
+        net4 = MLP_Relu()
+        optimizer = torch.optim.Adam(net4.parameters(), lr=self.learning_rate)
+        net4.train()
+        criterion = torch.nn.CrossEntropyLoss()
+        print("------ MNIST MLP_Relu_Bn Start------")
+        net4 = self.train_process(net4, optimizer=optimizer, criterion=criterion)
 
-        ans = self.test_process(net1)
+        if save_op:
+            torch.save(net1.state_dict(), "mlp_sigmoid_bn.pt")
+            torch.save(net2.state_dict(), "mlp_sigmoid.pt")
+            torch.save(net3.state_dict(), "mlp_relu_bn.pt")
+            torch.save(net4.state_dict(), "mlp_relu.pt")
+
+        mode = "Train"
+        ans = self.test_process(net1) 
+        ans += self.test_process(net1, mode=mode)
         with open("mlp_sigmoid_bn_test.bin", "wb") as f:
             pickle.dump(ans, f)
-        ans = self.test_process(net4)
+        ans = self.test_process(net2)
+        ans += self.test_process(net2, mode=mode)
         with open("mlp_sigmoid_test.bin", "wb") as f:
             pickle.dump(ans, f)
-        ans = self.test_process(net2)
+        ans = self.test_process(net3)
+        ans += self.test_process(net3, mode=mode)
         with open("mlp_relu_bn_test.bin", "wb") as f:
             pickle.dump(ans, f)
-        ans = self.test_process(net3)
+        ans = self.test_process(net4)
+        ans += self.test_process(net4, mode=mode)
         with open("mlp_relu_test.bin", "wb") as f:
             pickle.dump(ans, f)
+
+    def test_models(self, mode="Test"):
+        net1 = MLP_Sigmoid_Bn()
+        state = torch.load("mlp_sigmoid_bn.pt")
+        net1.load_state_dict(state)
+
+        net2 = MLP_Sigmoid()
+        state = torch.load("mlp_sigmoid.pt")
+        net2.load_state_dict(state)
+
+        net3 = MLP_Relu_Bn()
+        state = torch.load("mlp_relu_bn.pt")
+        net3.load_state_dict(state)
+
+        net4 = MLP_Relu()
+        state = torch.load("mlp_relu.pt")
+        net4.load_state_dict(state)
+
+        _ = self.test_process(net1, mode=mode)
+        _ = self.test_process(net2, mode=mode)
+        _ = self.test_process(net3, mode=mode)
+        _ = self.test_process(net4, mode=mode)
 
 
 if __name__ == "__main__":
     tool = Ann_Model_Training()
-    tool.training_model()
+    tool.test_models()
+    tool.test_models(mode="Train")

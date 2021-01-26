@@ -388,13 +388,7 @@ if __name__ == '__main__':
         wrong_indx = pickle.load(f)
     with open("wrong_pred.bin", "rb") as f:
         wrong_pred = pickle.load(f)
-    dataset = nmistDataset(mode="Test")
-    loc = 1
-    indx = wrong_indx[loc]
-    print("label: {:}, pred:{:}".format(dataset.labels[indx], wrong_pred[loc]))
-    td = read2Dspikes(dataset.file_path[indx])
-    anim = spikeFileIO.showTD(td, repeat=True, frameRate=60)
-    anim.save("case1.mp4")
+    print(len(wrong_pred))
 
 
 # 118, 1224, 2008, 3082, 4653, 4889, 5774, 7602, 8545, 

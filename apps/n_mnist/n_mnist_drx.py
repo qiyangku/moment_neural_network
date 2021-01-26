@@ -111,12 +111,13 @@ def raw2Tensor(TD: Event, frameRate=60):
 
 
 class nmistDataset(torch.utils.data.Dataset):
-    def __init__(self, datasetPath="D:/Data_repos/N-MNIST/data/", mode: str = "train"):
+    def __init__(self, datasetPath="D:/Data_repos/N-MNIST/data/", mode: str = "train", frames=120):
         super(nmistDataset, self).__init__()
         self.path = datasetPath
         self.mode = mode
         self.file_path = None
         self.labels = None
+        self.frames = frames
         self._fetch_files_path()
 
     def _fetch_files_path(self):
@@ -159,7 +160,7 @@ class nmistDataset(torch.utils.data.Dataset):
         input_sample = self.file_path[item]
         class_label = eval(self.labels[item])
 
-        u, s, r = raw2Tensor(read2Dspikes(input_sample))
+        u, s, r = raw2Tensor(read2Dspikes(input_sample), frameRate=self.frames)
 
         return u, s, r, class_label
 
@@ -188,16 +189,19 @@ class N_Mnist_Model_Training:
         self.random_seed = 1024
         self.log_interval = 10
         self.eps = 1e-8
+        self.fps = 240
         self.train_loader = None
         self.test_loader = None
         self.model = None
 
     def fetch_dataset(self):
-        self.train_loader = torch.utils.data.DataLoader(dataset=nmistDataset(datasetPath=self.file_path, mode="train"),
-                                                        batch_size=self.BATCH, shuffle=True)
+        self.train_loader = torch.utils.data.DataLoader(dataset=nmistDataset(
+            datasetPath=self.file_path, mode="train", frames=self.fps),
+            batch_size=self.BATCH, shuffle=True, num_workers=4)
 
-        self.test_loader = torch.utils.data.DataLoader(dataset=nmistDataset(datasetPath=self.file_path, mode="test"),
-                                                       batch_size=self.BATCH, shuffle=True)
+        self.test_loader = torch.utils.data.DataLoader(dataset=nmistDataset(
+            datasetPath=self.file_path, mode="test", frames=self.fps),
+            batch_size=self.BATCH, shuffle=True, num_workers=4)
 
     def training_mlp_with_corr(self, fix_seed=True, save_op=True, save_name="n_mnist_mlp_corr.pt"):
         if fix_seed:
@@ -214,7 +218,7 @@ class N_Mnist_Model_Training:
             for batch_idx, (mean, std, rho, target) in enumerate(self.train_loader):
                 optimizer.zero_grad()
                 out1, out2, out3 = net(mean, std, rho)
-                loss = criterion(self.pred_func_fano(out1, out2), target)
+                loss = criterion(out1, target)
                 loss.backward()
                 optimizer.step()
                 if batch_idx % self.log_interval == 0:
@@ -229,30 +233,29 @@ class N_Mnist_Model_Training:
     def pred_func_fano(self, out1, out2):
         return torch.abs(out1) / (out2 + self.eps)
 
-    def test_mlp_corr_model(self, model_name="n_mnist_mlp_corr.pt"):
-        if self.model is None:
-            net = torch.load(model_name)
-        else:
-            net = self.model
+    def test_mlp_corr_model(self, model_name="n_mnist_mlp_corr.pt", mode="Test"):
+        net = torch.load(model_name)
 
-        if self.test_loader is None:
+        if self.test_loader is None or self.train_loader is None:
             self.fetch_dataset()
         net.eval()
         test_loss = 0
         correct = 0
+        if mode == "Test":
+            data_loader = self.test_loader
+        else:
+            data_loader = self.train_loader
         with torch.no_grad():
-            for mean, std, rho, target in self.test_loader:
+            for mean, std, rho, target in data_loader:
                 out1, out2, out3 = net(mean, std, rho)
-                pred = self.pred_func_fano(out1, out2)
-                test_loss += F.cross_entropy(pred, target, reduction="sum").item()
-                pred = pred.data.max(1, keepdim=True)[1]
-
+                test_loss += F.cross_entropy(out1, target, reduction="sum").item()
+                pred = out1.data.max(1, keepdim=True)[1]
                 correct += torch.sum(pred.eq(target.data.view_as(pred)))
-        test_loss /= len(self.test_loader.dataset)
+        test_loss /= len(data_loader.dataset)
 
-        print('\nTrain set: Avg. loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
-            test_loss, correct, len(self.test_loader.dataset),
-            100. * correct / len(self.test_loader.dataset)))
+        print('\nModel: {:}, {:} set: Avg. loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
+            str(type(net)), mode, test_loss, correct, len(data_loader.dataset),
+            100. * correct / len(data_loader.dataset)))
 
     def continue_training(self, model_name, save_op=True):
         if self.model is None:
@@ -314,13 +317,10 @@ class N_Mnist_Model_Training:
 
 
 if __name__ == "__main__":
-    with open("wrong_indx.bin", "rb") as f:
-        wrong_indx = pickle.load(f)
-    with open("wrong_pred.bin", "rb") as f:
-        wrong_pred = pickle.load(f)
-    dataset = nmistDataset(mode="Test")
-    loc = 10
-    indx = wrong_indx[loc]
-    td = read2Dspikes(dataset.file_path[indx])
-
+    name = "mnn_mlp_nmnist.pt"
+    tool = N_Mnist_Model_Training()
+    tool.file_path = "./data/n_mnist/"
+    tool.EPOCHS = 5
+    tool.continue_training()
+    tool.test_mlp_corr_model(model_name=name)
 

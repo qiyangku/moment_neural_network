@@ -1,9 +1,7 @@
 # -*- coding: utf-8 -*-
 from Mnn_Core.mnn_modules import *
 import torchvision
-from torch.utils.tensorboard import SummaryWriter
-
-writer = SummaryWriter("runs/mnist_task")
+import pickle
 
 
 class Mnn_MLP_without_Corr(torch.nn.Module):
@@ -74,7 +72,6 @@ class Mnist_Model_Training:
         optimizer = torch.optim.Adam(net.parameters(), lr=self.learning_rate)
         net.train()
         criterion = torch.nn.CrossEntropyLoss()
-        count = 0
         print("------ MNIST MLP TRAINING START ------")
         for epoch in range(self.EPOCHS):
             for batch_idx, (data, target) in enumerate(self.train_loader):
@@ -89,8 +86,6 @@ class Mnist_Model_Training:
                     print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                         epoch, batch_idx * len(data), len(self.train_loader.dataset),
                                100 * batch_idx / len(self.train_loader), loss.item()))
-                    writer.add_scalar("loss", loss.item(), count)
-                    count += 1
         self.model = net
         if save_op:
             torch.save(net, save_name)
@@ -104,7 +99,7 @@ class Mnist_Model_Training:
         optimizer = torch.optim.Adam(net.parameters(), lr=self.learning_rate)
         net.train()
         criterion = torch.nn.CrossEntropyLoss()
-        count = 0
+
         print("------ MNIST MLP_CORR TRAINING START ------")
         for epoch in range(self.EPOCHS):
             for batch_idx, (data, target) in enumerate(self.train_loader):
@@ -122,26 +117,25 @@ class Mnist_Model_Training:
                     print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                         epoch, batch_idx * len(data), len(self.train_loader.dataset),
                                100 * batch_idx / len(self.train_loader), loss.item()))
-                    writer.add_scalar("loss", loss.item(), count)
-                    count += 1
         self.model = net
         if save_op:
             torch.save(net, save_name)
 
-    def test_mlp_corr_model(self, model_name="mnist_mlp_corr.pt"):
-        if self.model is None:
-            net = torch.load(model_name)
-        else:
-            net = self.model
+    def test_mlp_corr_model(self, model_name="mnist_mlp_corr.pt", mode="Test"):
+        net = torch.load(model_name)
 
-        if self.test_loader is None:
+        if self.test_loader is None or self.train_loader is None:
             self.fetch_dataset()
         net.eval()
         test_loss = 0
         correct = 0
+        if mode == "Test":
+            data_loader = self.test_loader
+        else:
+            data_loader = self.train_loader
         with torch.no_grad():
-            for data, target in self.test_loader:
-                data = data.view(self.batch_size_test, -1)
+            for data, target in data_loader:
+                data = data.view(data.size(0), -1)
                 data = data.type(torch.float64)
                 rho = torch.eye(data.size(-1))
                 rho = rho.repeat(data.size(0), 1, 1)
@@ -149,39 +143,55 @@ class Mnist_Model_Training:
                 test_loss += F.cross_entropy(out1, target, reduction="sum").item()
                 pred = out1.data.max(1, keepdim=True)[1]
                 correct += torch.sum(pred.eq(target.data.view_as(pred)))
-                test_loss /= len(self.test_loader.dataset)
+        test_loss /= len(data_loader.dataset)
 
-        print('\nTest set: Avg. loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
-            test_loss, correct, len(self.test_loader.dataset),
-            100. * correct / len(self.test_loader.dataset)))
+        ans = '\nModel: {:} \n {:} set: Avg. loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
+            str(type(net)), mode,
+            test_loss, correct, len(data_loader.dataset),
+            100. * correct / len(data_loader.dataset))
+        print(ans)
+        return ans
 
-    def test_mlp_model(self, model_name="mnist_mlp.pt"):
-        if self.model is None:
-            net = torch.load(model_name)
-        else:
-            net = self.model
+    def test_mlp_model(self, model_name="mnist_mlp.pt", mode="Test"):
+
+        net = torch.load(model_name)
         if self.test_loader is None:
             self.fetch_dataset()
         net.eval()
         test_loss = 0
         correct = 0
+        if mode == "Test":
+            data_loader = self.test_loader
+        else:
+            data_loader = self.train_loader
         with torch.no_grad():
-            for data, target in self.test_loader:
-                data = data.view(self.batch_size_test, -1)
+            for data, target in data_loader:
+                data = data.view(data.size(0), -1)
                 data = data.type(torch.float64)
                 out1, out2 = net(data, torch.sqrt(torch.abs(data)))
                 test_loss += F.cross_entropy(out1, target, reduction="sum").item()
                 pred = out1.data.max(1, keepdim=True)[1]
                 correct += torch.sum(pred.eq(target.data.view_as(pred)))
-                test_loss /= len(self.test_loader.dataset)
+        test_loss /= len(data_loader.dataset)
 
-        print('\nTest set: Avg. loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
-            test_loss, correct, len(self.test_loader.dataset),
-            100. * correct / len(self.test_loader.dataset)))
+        ans = '\nModel: {:} \n {:} set: Avg. loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
+            str(type(net)), mode,
+            test_loss, correct, len(data_loader.dataset),
+            100. * correct / len(data_loader.dataset))
+        print(ans)
+        return ans
 
 
 if __name__ == "__main__":
     utils = Mnist_Model_Training()
-    utils.batch_size_train = 5
-    utils.training_mlp_with_corr()
+    utils.file_path = "./data/mnist/"
+    ans = utils.test_mlp_model()
+    ans += utils.test_mlp_model(mode="Train")
+    with open("mnn_mlp.bin", "wb") as f:
+        pickle.dump(ans, f)
+
+    ans = utils.test_mlp_corr_model()
+    ans += utils.test_mlp_corr_model(mode="Train")
+    with open("mnn_mlp_corr.bin", "wb") as f:
+        pickle.dump(ans, f)
 
