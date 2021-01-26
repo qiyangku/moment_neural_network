@@ -1,4 +1,3 @@
-#from Mnn_Core.mnn_pytorch import *
 from Mnn_Core.mnn_pytorch import *
 import numpy as np
 import torch
@@ -6,8 +5,8 @@ import time
 from torch.utils.tensorboard import SummaryWriter
 #from ray import tune
 import json
-from apps.regression.data import *
-from apps.regression.visualization_tools import *
+from apps.synfire.synfire_data import *
+#from apps.synfire.synfire_visualization_tools import *
 
 torch.set_default_tensor_type(torch.DoubleTensor)
 #seed = 5
@@ -79,10 +78,10 @@ class MomentLayerRecurrent(torch.nn.Module):
         #u_ext = u_ext.clone().detach()
         #s_ext = s_ext.clone().detach()
         
-        u_ext, s_ext = self.linear_ext.forward(u_ext, s_ext) #comment out if transforming the external input is not needed.
+        # u_ext, s_ext = self.linear_ext.forward(u_ext, s_ext) #comment out if transforming the external input is not needed.
                 
-        s_ext = self.bn_std_ext.forward(self.bn_mean_ext, u_ext, s_ext)
-        u_ext = self.bn_mean_ext(u_ext)
+        # s_ext = self.bn_std_ext.forward(self.bn_mean_ext, u_ext, s_ext)
+        # u_ext = self.bn_mean_ext(u_ext)
         
         if not self.training: #cache result only for validation phase                        
             self.output[0] = torch.zeros( (seq_len, u.shape[0], self.output_size ) )
@@ -98,10 +97,14 @@ class MomentLayerRecurrent(torch.nn.Module):
             s = self.bn_std.forward(self.bn_mean, u, s)
             u = self.bn_mean(u)
             
+            u_ext_tmp, s_ext_tmp = self.linear_ext.forward(u_ext[:,:,i], s_ext[:,:,i]) #comment out if transforming the external input is not needed.
+            s_ext_tmp = self.bn_std_ext.forward(self.bn_mean_ext, u_ext_tmp, s_ext_tmp)
+            u_ext_tmp = self.bn_mean_ext(u_ext_tmp)
+            
             #combine recurrent and external            
             #if u_ext:
-            u = u + u_ext
-            s = torch.sqrt( s*s + s_ext*s_ext )
+            u = u + u_ext_tmp
+            s = torch.sqrt( s*s + s_ext_tmp*s_ext_tmp )
             #rho is unaffected if external input is uncorrelated (proof?)
             
             u_activated = Mnn_Activate_Mean.apply(u, s)
@@ -205,26 +208,27 @@ class RecurrentNN():
         sample_size = config['sample_size']        
         batch_size = config['batch_size'] #64
         num_batches = int(sample_size/batch_size)
+        num_epoch = config['num_epoch'] #50#1000
         lr = config['lr']#0.01
         momentum = config['momentum'] #0.9
         optimizer_name = config['optimizer_name']
         input_size = config['input_size']
         output_size = config['output_size']
+        ext_input_type = config['ext_input_type']
         
         if config['with_corr']:
             model = Renoir(max_time_steps = config['max_time_steps'], hidden_layer_size = config['hidden_layer_size'], input_size = input_size, output_size = output_size)
         else:
             model = Renoir(max_time_steps = config['max_time_steps'], hidden_layer_size = config['hidden_layer_size'], input_size = input_size, output_size = output_size)        
             
-        train_dataset = Dataset(config['dataset_name'], sample_size = sample_size, input_dim = input_size, output_dim = output_size, with_corr = config['with_corr'], fixed_rho = config['fixed_rho'])
-        train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size = batch_size)        
+        train_dataset = SynfireDataset(config)
+        train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size = batch_size, shuffle=False)        
     
         model.target_transform = train_dataset.transform
         
-        validation_dataset = Dataset(config['dataset_name'], sample_size = 32, input_dim = input_size, output_dim = output_size, transform = train_dataset.transform, with_corr = config['with_corr'], fixed_rho = config['fixed_rho'] )          
-        validation_dataloader = torch.utils.data.DataLoader(validation_dataset, batch_size = 32)
-            
-        
+        validation_dataset = SynfireDataset(config)        
+        validation_dataloader = torch.utils.data.DataLoader(validation_dataset, batch_size = 32, shuffle=False)
+         
         #model.target_affine = target_affine
         
         #param_container.set_ratio(0.1) # E/I balance. Mostly affect initialization. Mild value seems to improve result.
@@ -234,7 +238,7 @@ class RecurrentNN():
         params = model.parameters()
         
         if optimizer_name == 'Adam':
-            optimizer = torch.optim.Adam(params, lr = lr, amsgrad = True) #recommended lr: 0.1 (Adam requires a much smaller learning rate than SGD otherwise won't converge)
+            optimizer = torch.optim.Adam(params, lr = lr, amsgrad = True, weight_decay = config['weight_decay']) #recommended lr: 0.1 (Adam requires a much smaller learning rate than SGD otherwise won't converge)
         elif optimizer_name == 'SGD':
             optimizer = torch.optim.SGD(params, lr= lr, momentum= momentum) #recommended lr: 2
         else:
@@ -253,8 +257,16 @@ class RecurrentNN():
             #--- iterate ver minibatches
             for i_batch, sample in enumerate(train_dataloader):
                 optimizer.zero_grad()                
+                
+                if epoch < (num_epoch/2):
+                    ext_mean = (1-epoch/num_epoch*2)*sample['input_data'][3] + 1*(epoch/num_epoch*2)
+                    ext_std =  (1-epoch/num_epoch*2)*sample['input_data'][4] + 1*(epoch/num_epoch*2)
+                else:
+                    ext_mean = torch.ones(sample['input_data'][3].shape)
+                    ext_std = torch.ones(sample['input_data'][4].shape)
+                
                 if config['with_corr']:
-                    u, s, rho = model.forward(sample['input_data'][0], sample['input_data'][1], sample['input_data'][2], sample['input_data'][3], sample['input_data'][4])
+                    u, s, rho = model.forward(sample['input_data'][0], sample['input_data'][1], sample['input_data'][2], ext_mean , ext_std)
                     #u, s, rho = model.forward(sample['input_data'][0], sample['input_data'][1], sample['input_data'][2], None, None)
                 else:
                     u, s = model.forward(sample['input_data'][0], sample['input_data'][1])
@@ -280,8 +292,10 @@ class RecurrentNN():
                 with torch.no_grad():
                     model.eval()
                     for i_batch, sample in enumerate(validation_dataloader):
+                        ext_mean = torch.ones(sample['input_data'][3].shape)
+                        ext_std = torch.ones(sample['input_data'][4].shape)
                         if config['with_corr']:
-                            u, s, rho = model.forward(sample['input_data'][0], sample['input_data'][1], sample['input_data'][2], sample['input_data'][3], sample['input_data'][4])
+                            u, s, rho = model.forward(sample['input_data'][0], sample['input_data'][1], sample['input_data'][2], ext_mean, ext_std)
                             #u, s, rho = model.forward(sample['input_data'][0], sample['input_data'][1], sample['input_data'][2], None, None)
                         else:
                             u, s = model.forward(sample['input_data'][0], sample['input_data'][1])
@@ -336,17 +350,17 @@ class RecurrentNN():
 
 if __name__ == "__main__":    
 
-    config = {'sample_size': 64,
+    config = {'sample_size': 32*100,
               'batch_size': 32,
-              'num_epoch': 30,
+              'num_epoch': 50,
               'lr': 0.01,
               'momentum': 0.9,
               'optimizer_name': 'Adam',
               'num_hidden_layers': None,
               'max_time_steps': 10,
-              'input_size': 64,
-              'output_size': 64,
-              'hidden_layer_size': 64,
+              'input_size': 128,
+              'output_size': 128,
+              'hidden_layer_size': 128,
               'trial_id': int(time.time()),
               'tensorboard': True,
               'with_corr': True,
@@ -354,17 +368,19 @@ if __name__ == "__main__":
               'log_dir': 'runs/synfire',
               'loss':'mse_covariance',
               'seed': None,
-              'fixed_rho': 0.6 #ignored if with_corr = False
+              'fixed_rho': 0.8, #ignored if with_corr = False
+              'weight_decay': 0,
+              'ext_input_type': 'persistent'
         }
     
     model = RecurrentNN.train(config)
     
     file_name = config['trial_id']
-    torch.save(model.state_dict(), './data/regression/{}.pt'.format(file_name) ) #save result by time stamp
-    with open('./data/regression/{}_config.json'.format(file_name),'w') as f:
+    torch.save(model.checkpoint, './data/synfire/{}.pt'.format(file_name) ) #save result by time stamp
+    with open('./data/synfire/{}_config.json'.format(file_name),'w') as f:
         json.dump(config,f)
     
-    #runfile('./apps/regression/recurrent_nn.py', wdir='./')
+    #runfile('./apps/synfire/recurrent_nn.py', wdir='./')
     
 # # Example snippet
 # state = init_state

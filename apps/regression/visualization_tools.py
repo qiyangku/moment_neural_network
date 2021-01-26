@@ -188,7 +188,7 @@ class VisualizationTools():
         if len(L.input) > 3:
             ax4 = fig.add_subplot(2,2,4)
             with torch.no_grad():
-                u_ext, s_ext = L.linear_ext.forward( L.input[3], L.input[4] ) #comment out if transforming the external input is not needed.        
+                u_ext, s_ext = L.linear_ext.forward( L.input[3][:,:,-1], L.input[4][:,:,-1] ) #comment out if transforming the external input is not needed.        
                 s_ext = L.bn_std_ext.forward(L.bn_mean_ext, u_ext, s_ext)
                 u_ext = L.bn_mean_ext(u_ext) + L.bn_mean.bias - scale*L.bn_mean.running_mean
             ax4.plot(u_ext[i,:])

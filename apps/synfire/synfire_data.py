@@ -24,8 +24,8 @@ def prod_normal(mu1,s1,mu2,s2,rho):
     return mu3, s3
 
 
-class Dataset(torch.utils.data.Dataset):
-    def __init__(self, dataset_name, sample_size = 10, input_dim = 1, output_dim = 1, transform = None, with_corr = True, fixed_rho = None):
+class SynfireDataset(torch.utils.data.Dataset):
+    def __init__(self, config, transform = None):
         """
         Args:
             dataset_name (string): name of the dataset
@@ -34,82 +34,44 @@ class Dataset(torch.utils.data.Dataset):
             transform (callable, optional): Optional transform to be applied
                 on a sample.
         """
-        self.sample_size = sample_size
+        self.sample_size = config['sample_size']
         self.transform = transform
-        self.fixed_rho = fixed_rho
-        self.input_dim = input_dim
-        self.output_dim = output_dim
-        
-        if dataset_name == 'cue_combo':          
-            self.cue_combination(with_corr = with_corr)
-        elif dataset_name == 'synfire':
-            #depreciated. please generate the dataset from run script
-            pass
-        elif dataset_name == 'butterfly':
-            self.butterfly()
-        else:
-            pass
+        self.fixed_rho = config['fixed_rho']
+        self.input_dim = config['input_size']
+        self.output_dim = config['output_size']
+        self.num_timesteps = config['max_time_steps']
+        self.ext_input_type = config['ext_input_type']        
+        self.gen = torch.Generator()
                 
     def __len__(self):
         return self.sample_size
     
     def __getitem__(self, idx):
         if torch.is_tensor(idx):
-            idx = idx.tolist()    
-        sample = {'input_data': self.input_data[idx],
-                  'target_data': self.target_data[idx]}            
+            idx = idx.tolist()
+            batch_size = len(idx)
+            self.gen.manual_seed(idx[0]) #set random seed with input index
+        else:
+            batch_size = 1
+            self.gen.manual_seed(idx) #set random seed with input index
+        
+        input_data, target_data = self.gen_sample(batch_size, self.num_timesteps, self.ext_input_type)
+        #use indx[0] as seed and generate len(indx) samples!
+        sample = {'input_data': input_data[0],
+                  'target_data': target_data[0]}
+        #print('input data length: ',len(input_data))
         return sample    
         
-    def cue_combination(self, with_corr = False):
-        '''Generate random synthetic data points'''
-        input_mean = 1 * torch.rand(self.sample_size, 2) #NB: 0<min(input mean)< output mean < max(input mean)<1/Tref = 0.2
-        input_mean[:,1] = 0.0 #fix one of the distributions to unit gaussian
-        input_std = 2 * torch.rand(self.sample_size, 2) + 1
-        input_std[:,1] = 1.0 #fix one of the distributions to unit gaussian
+    def gen_sample(self, batch_size, num_timesteps, ext_input_type):
         
-        if with_corr:
-            if self.fixed_rho:
-                rho = torch.ones(self.sample_size)*self.fixed_rho
-            else:
-                rho = (2*torch.rand(self.sample_size) - 1)*0.5
-        else:
-            rho = torch.zeros(self.sample_size)
-            if self.fixed_rho:
-                print('Warning: correlation has been set to zero.')
-                        
-        input_corr = torch.zeros(self.sample_size, 2, 2)
-        for i in range(self.sample_size): #not the most pythonic way of coding; but easier to read
-            input_corr[i,:,:] = torch.eye(2) + (1-torch.eye(2))*rho[i]
-                
-        target_mean, target_std = prod_normal( input_mean[:,0], input_std[:,0], input_mean[:,1], input_std[:,1], rho)
-        
-        if not self.transform:            
-            mean_scale = 1/(torch.max(target_mean)-torch.min(target_mean))*0.1
-            mean_bias = - torch.min(target_mean)/(torch.max(target_mean)-torch.min(target_mean))*0.1+0.02
-            std_scale = 1/(torch.max(target_std)-torch.min(target_std))*0.1
-            std_bias = - torch.min(target_std)/(torch.max(target_std)-torch.min(target_std))*0.1+0.05
-            
-            self.transform = lambda x, y: (x*mean_scale + mean_bias , y*std_scale + std_bias)
-            self.transform_coefs = {'mean_scale': mean_scale, 'mean_bias': mean_bias, 'std_scale': std_scale, 'std_bias': std_bias}
-        
-        target_mean, target_std = self.transform( target_mean, target_std )
-        target_corr = torch.ones(self.sample_size,1,1)
-        
-        self.input_data = list(zip(input_mean, input_std, input_corr))
-        self.target_data = list(zip(target_mean.unsqueeze(1), target_std.unsqueeze(1), target_corr))
-        
-        return
-    
-    def synfire(self, num_timesteps = None, ext_input_type = None):
-        
-        input_mean = torch.zeros(self.sample_size, self.input_dim)
-        input_std = torch.zeros(self.sample_size, self.input_dim)
-        input_corr = torch.zeros(self.sample_size, self.input_dim, self.input_dim)
+        input_mean = torch.zeros(batch_size, self.input_dim)
+        input_std = torch.zeros(batch_size, self.input_dim)
+        input_corr = torch.zeros(batch_size, self.input_dim, self.input_dim)
         
         
-        target_mean = torch.zeros(self.sample_size, self.output_dim)
-        target_std = torch.zeros(self.sample_size, self.output_dim)
-        target_corr = torch.zeros(self.sample_size, self.output_dim, self.output_dim)
+        target_mean = torch.zeros(batch_size, self.output_dim)
+        target_std = torch.zeros(batch_size, self.output_dim)
+        target_corr = torch.zeros(batch_size, self.output_dim, self.output_dim)
         
         #patch = torch.zeros(self.input_dim)        
         #patch[:int(self.input_dim/4)] = 1.0        
@@ -126,15 +88,15 @@ class Dataset(torch.utils.data.Dataset):
         corr_tmp.fill_diagonal_(1.0)
         
         
-        for i in range(self.sample_size):
-            rand_shift = int(torch.randint(self.input_dim, (1,)))
+        for i in range(batch_size):
+            rand_shift = int(torch.randint(self.input_dim, (1,), generator = self.gen))
             # input_mean[i,:] = patch.roll( rand_shift )*2.0 #randomly shifting the location of the patch
             # input_std[i,:] = patch.roll( rand_shift)*5.0            
             input_mean[i,:] = patch.roll( rand_shift )*0.15 #randomly shifting the location of the patch
             input_std[i,:] = patch.roll( rand_shift)*0.2  
             
             #inputs are weakly correlated without spatial structure
-            temp_corr = (torch.rand( self.input_dim, self.input_dim )*2 -1)*0.2 #weakly correlated
+            temp_corr = (torch.rand( self.input_dim, self.input_dim, generator = self.gen )*2 -1)*0.2 #weakly correlated
             temp_corr.fill_diagonal_(1.0)
             input_corr[i,:,:] = temp_corr
             
@@ -149,25 +111,25 @@ class Dataset(torch.utils.data.Dataset):
             input_mean_ext = input_mean.clone().unsqueeze(-1).repeat(1, 1, num_timesteps)
             input_std_ext = input_std.clone().unsqueeze(-1).repeat(1, 1, num_timesteps)
         elif ext_input_type == 'transient':
-            input_mean_ext = 0.1*torch.randn(self.sample_size, self.input_dim, num_timesteps)  #uniform random external input
-            input_std_ext = 0.2*torch.rand(self.sample_size, self.input_dim, num_timesteps)   
+            input_mean_ext = 0.1*torch.randn(batch_size, self.input_dim, num_timesteps, generator = self.gen)  #uniform random external input
+            input_std_ext = 0.2*torch.rand(batch_size, self.input_dim, num_timesteps, generator = self.gen)   
             input_mean_ext[:,:,0] = input_mean.clone()
             input_mean_ext[:,:,1] = input_std.clone()            
         elif ext_input_type == 'fadeoff':
             #use a loop for the sake of readability.
-            input_mean_ext = 0.1*torch.randn(self.sample_size, self.input_dim, num_timesteps)  #uniform random external input
-            input_std_ext = 0.2*torch.rand(self.sample_size, self.input_dim, num_timesteps)       
+            input_mean_ext = 0.1*torch.randn(batch_size, self.input_dim, num_timesteps, generator = self.gen)  #uniform random external input
+            input_std_ext = 0.2*torch.rand(batch_size, self.input_dim, num_timesteps, generator = self.gen)       
             for k in range(int(num_timesteps/2)): #fade off the input for the first half of time steps
                 amp = 1 - k/int(num_timesteps/2)
                 input_mean_ext[:,:,k] += input_mean.clone()*amp
                 input_std_ext[:,:,k] += input_std.clone()*amp
         else:                
-            input_mean_ext = 0.1*torch.randn(self.sample_size, self.input_dim, num_timesteps)  #uniform random external input
-            input_std_ext = 0.2*torch.rand(self.sample_size, self.input_dim, num_timesteps)    
+            input_mean_ext = 0.1*torch.randn(batch_size, self.input_dim, num_timesteps, generator = self.gen)  #uniform random external input
+            input_std_ext = 0.2*torch.rand(batch_size, self.input_dim, num_timesteps, generator = self.gen)    
         
-        self.input_data = list(zip(input_mean, input_std, input_corr, input_mean_ext, input_std_ext))
-        self.target_data = list(zip(target_mean, target_std, target_corr))
-        return
+        input_data = list(zip(input_mean, input_std, input_corr, input_mean_ext, input_std_ext))
+        target_data = list(zip(target_mean, target_std, target_corr))
+        return input_data, target_data
         
     def butterfly(self):
         ''' Encode an image of a butterfly into the '''
