@@ -57,10 +57,10 @@ class MomentLayerRecurrent(torch.nn.Module):
         #external input        
         #self.ext_input = Mnn_Linear_Corr(input_size, output_size)
 
-        self.bn_mean_ext = torch.nn.BatchNorm1d(output_size)
-        self.bn_mean_ext.weight.data.fill_(2.5)
-        self.bn_mean_ext.bias.data.fill_(2.5)        
-        self.bn_std_ext = Mnn_Std_Bn1d(output_size , ext_bias = False)
+        #self.bn_mean_ext = torch.nn.BatchNorm1d(output_size)
+        #self.bn_mean_ext.weight.data.fill_(2.5)
+        #self.bn_mean_ext.bias.data.fill_(2.5)        
+        #self.bn_std_ext = Mnn_Std_Bn1d(output_size , ext_bias = False)
         
         #cache the output (do this for every time step)
         #self.mean = []
@@ -97,12 +97,14 @@ class MomentLayerRecurrent(torch.nn.Module):
             s = self.bn_std.forward(self.bn_mean, u, s)
             u = self.bn_mean(u)
             
-            u_ext_tmp, s_ext_tmp = self.linear_ext.forward(u_ext[:,:,i], s_ext[:,:,i]) #comment out if transforming the external input is not needed.
-            s_ext_tmp = self.bn_std_ext.forward(self.bn_mean_ext, u_ext_tmp, s_ext_tmp)
-            u_ext_tmp = self.bn_mean_ext(u_ext_tmp)
+            #u_ext_tmp, s_ext_tmp = self.linear_ext.forward(u_ext[:,:,i], s_ext[:,:,i]) #comment out if transforming the external input is not needed.
+            #s_ext_tmp = self.bn_std_ext.forward(self.bn_mean_ext, u_ext_tmp, s_ext_tmp)
+            #u_ext_tmp = self.bn_mean_ext(u_ext_tmp)
             
             #combine recurrent and external            
             #if u_ext:
+            u_ext_tmp = u_ext[:,:,i]
+            s_ext_tmp = s_ext[:,:,i]
             u = u + u_ext_tmp
             s = torch.sqrt( s*s + s_ext_tmp*s_ext_tmp )
             #rho is unaffected if external input is uncorrelated (proof?)
@@ -259,8 +261,8 @@ class RecurrentNN():
                 optimizer.zero_grad()                
                 
                 if epoch < (num_epoch/2):
-                    ext_mean = (1-epoch/num_epoch*2)*sample['input_data'][3] + 1*(epoch/num_epoch*2)
-                    ext_std =  (1-epoch/num_epoch*2)*sample['input_data'][4] + 1*(epoch/num_epoch*2)
+                    ext_mean = (1-epoch/num_epoch*2)*sample['input_data'][3]/torch.max(sample['input_data'][3])*2 + 1*(epoch/num_epoch*2)
+                    ext_std =  (1-epoch/num_epoch*2)*sample['input_data'][4]/torch.max(sample['input_data'][4])*2 + 1*(epoch/num_epoch*2)
                 else:
                     ext_mean = torch.ones(sample['input_data'][3].shape)
                     ext_std = torch.ones(sample['input_data'][4].shape)
@@ -351,17 +353,17 @@ class RecurrentNN():
 
 if __name__ == "__main__":    
 
-    config = {'sample_size': 32*100,
+    config = {'sample_size': 32*1000,
               'batch_size': 32,
               'num_epoch': 50,
               'lr': 0.01,
               'momentum': 0.9,
               'optimizer_name': 'Adam',
               'num_hidden_layers': None,
-              'max_time_steps': 10,
-              'input_size': 128,
-              'output_size': 128,
-              'hidden_layer_size': 128,
+              'max_time_steps': 5,
+              'input_size': 64,
+              'output_size': 64,
+              'hidden_layer_size': 64,
               'trial_id': int(time.time()),
               'tensorboard': True,
               'with_corr': True,
@@ -381,7 +383,7 @@ if __name__ == "__main__":
     with open('./data/synfire/{}_config.json'.format(file_name),'w') as f:
         json.dump(config,f)
     
-    #runfile('./apps/synfire/recurrent_nn.py', wdir='./')
+    #runfile('./apps/synfire/recurrent_nn_w_input_current.py', wdir='./')
     
 # # Example snippet
 # state = init_state

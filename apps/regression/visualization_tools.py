@@ -180,7 +180,7 @@ class VisualizationTools():
         ax3 = fig.add_subplot(2,2,3)
         scale = L.bn_mean.weight/torch.sqrt(L.bn_mean.running_var)
         w = L.linear.weight*(scale.unsqueeze(0).T)
-        vmax = torch.max(torch.abs(w))
+        vmax = 10#torch.max(torch.abs(w))
         img3 = ax3.imshow(w.detach().numpy(), cmap = 'bwr', vmax = vmax, vmin = -vmax)
         ax3.set_title('Recurrent weight (BN-scaled)')
         fig.colorbar(img3)
