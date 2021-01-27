@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
-import torch.nn.functional as F
 import numpy as np
 from Mnn_Core import fast_dawson
+import torch
+from torch import Tensor
 
 
 class Param_Container:
@@ -113,12 +114,6 @@ class Param_Container:
         print("eps: ", self.get_eps())
         print("cut_off:", self.get_cut_off())
         print("degree:", self.get_degree())
-
-
-def loss_function_mse(pred_mean, pred_std, target_mean, target_std):
-    loss1 = F.mse_loss(pred_mean, target_mean)
-    loss2 = F.mse_loss(pred_std, target_std)
-    return loss1 + loss2
 
 
 class Mnn_Core_Func(Param_Container):
@@ -251,8 +246,6 @@ class Mnn_Core_Func(Param_Container):
 
         grad_su[indx2] = temp1 + temp2
 
-        # -----------
-
         grad_ss = np.zeros(ubar.shape)
 
         temp_dg = self.Dawson1.dawson1(ub) * ub - self.Dawson1.dawson1(lb) * lb
@@ -350,5 +343,42 @@ class Mnn_Core_Func(Param_Container):
         return grad_chu, grad_chs
 
 
+def get_cov_matrix(std_in: Tensor, corr_in: Tensor) -> Tensor:
+    if std_in.dim() == 1:
+        temp_std_in = std_in.view(1, -1)
+        temp_std_in = torch.mm(temp_std_in.transpose(1, 0), temp_std_in)
+        cov_in = torch.mul(temp_std_in, corr_in)
+    else:
+        temp_std_in = std_in.view(std_in.size()[0], 1, -1)
+        temp_std_in = torch.bmm(temp_std_in.transpose(-2, -1), temp_std_in)
+        # element-wise mul
+        cov_in = torch.mul(temp_std_in, corr_in)
+
+    return cov_in
+
+
+def update_correlation(cov_out: Tensor, ext_std):
+    if cov_out.dim() == 2:
+        var_out = torch.diagonal(cov_out)
+    else:
+        var_out = torch.diagonal(cov_out, dim1=-2, dim2=-1)
+    # Assume the external stimuli is independent with input
+    if ext_std is not None:
+        ext_var = torch.pow(ext_std, 2)
+        var_out += ext_var
+    if var_out.dim() == 1:
+        temp_var_out = var_out.view(1, -1)
+        temp_var_out = torch.mm(temp_var_out, torch.transpose(temp_var_out, dim0=1, dim1=0))
+    # Assume every dimension of the external stimuli are mutually independent
+        corr_out = torch.div(cov_out, torch.sqrt(temp_var_out))
+        torch.diagonal(corr_out).data.fill_(1.0)
+    else:
+        temp_var_out = var_out.view(var_out.size()[0], 1, -1)
+        temp_var_out = torch.bmm(temp_var_out, torch.transpose(temp_var_out, dim0=-2, dim1=-1))
+
+        corr_out = torch.div(cov_out, torch.sqrt(temp_var_out))
+        torch.diagonal(corr_out, dim1=-2, dim2=-1).data.fill_(1.0)
+    std_out = torch.sqrt(var_out)
+    return std_out, corr_out
 
 
