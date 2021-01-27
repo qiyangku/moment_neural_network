@@ -7,6 +7,7 @@ from torch.utils.tensorboard import SummaryWriter
 import json
 from apps.synfire.synfire_data import *
 #from apps.synfire.synfire_visualization_tools import *
+from apps.synfire.conv1d_fft import Mnn_Conv1d_fft
 
 torch.set_default_tensor_type(torch.DoubleTensor)
 #seed = 5
@@ -44,8 +45,11 @@ class MomentLayerRecurrent(torch.nn.Module):
         self.output_size = output_size
         
         #recurrent input
-        self.linear = Mnn_Linear_Corr(output_size, output_size)
-        self.linear.weight.data += mexi_hat(output_size)*0.1 #add to existing weight
+        #self.linear = Mnn_Linear_Corr(output_size, output_size)
+        #self.linear.weight.data += mexi_hat(output_size)*0.1 #add to existing weight        
+        self.linear = Mnn_Conv1d_fft(output_size)
+        self.linear.weight.data = mexi_hat(output_size)[0,:] #don't worry about this
+        #conv1d forward pass is 2x as fast as linear; however with backward it is 0.5x as slow as linear; does have the benefit of reduced number of trainables
         
         self.linear_ext = Mnn_Linear_without_Corr(output_size, output_size)
         
@@ -93,7 +97,7 @@ class MomentLayerRecurrent(torch.nn.Module):
         
         for i in range(seq_len):
             #recurrent
-            u, s, rho = self.linear.forward(u, s, rho)        
+            u, s, rho = self.linear.forward(u, s, rho)             
             s = self.bn_std.forward(self.bn_mean, u, s)
             u = self.bn_mean(u)
             
@@ -223,12 +227,14 @@ class RecurrentNN():
         else:
             model = Renoir(max_time_steps = config['max_time_steps'], hidden_layer_size = config['hidden_layer_size'], input_size = input_size, output_size = output_size)        
             
-        train_dataset = SynfireDataset(config)
+        #train_dataset = SynfireDataset(config)
+        train_dataset = SynfireDatasetConv(config)
         train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size = batch_size, shuffle=False)        
     
         model.target_transform = train_dataset.transform
         
-        validation_dataset = SynfireDataset(config)        
+        #validation_dataset = SynfireDataset(config)        
+        validation_dataset = SynfireDatasetConv(config)  
         validation_dataloader = torch.utils.data.DataLoader(validation_dataset, batch_size = 32, shuffle=False)
          
         #model.target_affine = target_affine
@@ -353,14 +359,14 @@ class RecurrentNN():
 
 if __name__ == "__main__":    
 
-    config = {'sample_size': 32*1000,
+    config = {'sample_size': 32*200,
               'batch_size': 32,
               'num_epoch': 50,
               'lr': 0.01,
               'momentum': 0.9,
               'optimizer_name': 'Adam',
               'num_hidden_layers': None,
-              'max_time_steps': 5,
+              'max_time_steps': 8,
               'input_size': 64,
               'output_size': 64,
               'hidden_layer_size': 64,
@@ -373,7 +379,7 @@ if __name__ == "__main__":
               'seed': None,
               'fixed_rho': 0.8, #ignored if with_corr = False
               'weight_decay': 0,
-              'ext_input_type': 'persistent'
+              'ext_input_type': 'persistent',              
         }
     
     model = RecurrentNN.train(config)

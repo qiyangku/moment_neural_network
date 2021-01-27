@@ -11,6 +11,7 @@ from Mnn_Core.mnn_pytorch import *
 import numpy as np
 import torch
 import torch.fft
+from apps.synfire.conv1d_fft import Mnn_Conv1d_fft
 
 #np.random.seed(1)
 
@@ -20,6 +21,8 @@ class SynfireChain():
         self.weight_type = weight_type
         self.linear = Mnn_Linear_Corr(num_neurons, num_neurons)
         self.linear.weight.data = self.mexi_mat()
+        self.conv1d = Mnn_Conv1d_fft(num_neurons)
+        self.conv1d.weight.data = self.mexi_mat()[0,:]
         
     
     def mexi_mat(self, we = 5, wi = 1.5, de = 0.5, di = 1.5):
@@ -47,28 +50,31 @@ class SynfireChain():
             S = torch.zeros(self.num_neurons ,timesteps)
             R = torch.zeros(self.num_neurons , self.num_neurons, timesteps)
             
-            w = self.linear.weight.data[0,:]
-            wfft = torch.fft.fft(w)            
-            
-            print('Shape of w: ',w.shape) #make sure the shape is the same
-            print('Shape of u: ',u.shape)
+            #w = self.linear.weight.data[0,:]            
+            #wfft = torch.fft.fft(w)                        
+            #print('Shape of w: ',w.shape) #make sure the shape is the same
+            #print('Shape of u: ',u.shape)
             
             
             for i in range(timesteps):
                 #u, s, rho = self.linear.forward(u, s, rho)
+                u, s, rho = self.conv1d.forward(u, s, rho)
                 
-                #>>>> FFT-based summation layer                
-                u = torch.fft.ifft(wfft*torch.fft.fft(u))
+                # #>>>> FFT-based summation layer                
+                # u = torch.real(torch.fft.ifft(wfft*torch.fft.fft(u)))
                 
-                C = rho*s.view(self.num_neurons,1)*s.view(1,self.num_neurons)
-                Cfft = torch.fft.fft( torch.fft.fft(C, dim = 0), dim = 1)
-                Cfft = wfft.view(self.num_neurons,1)*Cfft*wfft.view(1,self,num_neurons)
-                C = torch.fft.ifft(Cfft)
+                # C = rho*s.view(self.num_neurons,1)*s.view(1,self.num_neurons)
                 
-                s = torch.sqrt(torch.diag(C))                
-                rho = C/s.view(self.num_neurons,1)/s.view(1,self.num_neurons)
+                # Cfft = torch.fft.fft( torch.fft.fft(C, dim = 0), dim = 1)
+                # #Cfft = torch.fft.fftn(C, dim = (0,1)) #somehow slightly slower than 1d fft by 5%                
+                # Cfft = wfft.view(self.num_neurons,1)*Cfft*wfft.view(1,self.num_neurons)                
+                # C = torch.real(torch.fft.ifft(torch.fft.ifft(Cfft, dim = 0), dim =1))
+                # # = torch.real(torch.fft.ifftn( Cfft , dim = (0,1)))
                 
-                #<<<<
+                # s = torch.sqrt(torch.diag(C))
+                # rho = C/s.view(self.num_neurons,1)/s.view(1,self.num_neurons)
+                
+                # #<<<<
                 
                 u += u_ext
                 s = torch.sqrt( s*s + s_ext*s_ext)
@@ -269,11 +275,15 @@ class SynfireVisualize():
 #%% 
 if __name__ == "__main__":    
     sfc = SynfireChain(100, weight_type = 'gaussian')
+    t0 = time.time()
     U, S, R, x = sfc.run(100, use_fft = True)
+    print('Elapsed time for fft: ', time.time()-t0)
     U2, S2, R2, x = sfc.run(100, use_fft = False)
+    print('Elapsed time for non-fft: ', time.time()-t0)
     
     plt.plot(U[:,-1])
     plt.plot(U2[:,-1],'.')
+    #plt.plot((U[:,-1]-U2[:,-1])/U2[:,-1])
     
     #WE, ie_ratio, U, S, R, x = sfc.para_sweep()
     #sfc.para_sweep_extra()

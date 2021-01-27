@@ -258,6 +258,7 @@ class VisualizationTools():
         
         ax1 = fig.add_subplot(2,2,1)    
         u = L.output[0][:,i,:].detach().numpy()
+        u = np.roll(u, (int(u.shape[1]/2), 0))
         img1 = ax1.imshow(u, origin = 'lower', aspect = 'auto')
         ax1.set_xlabel('Neuron index')
         ax1.set_ylabel('Time steps')
@@ -267,6 +268,7 @@ class VisualizationTools():
         
         ax2 = fig.add_subplot(2,2,2)    
         s = L.output[1][:,i,:].detach().numpy()
+        s = np.roll(s, (int(s.shape[1]/2), 0))
         img2 = ax2.imshow(s, origin = 'lower', aspect = 'auto')
         
         ax2.set_xlabel('Neuron index')
@@ -277,11 +279,20 @@ class VisualizationTools():
         
         ax3 = fig.add_subplot(2,2,3)
         scale = L.bn_mean.weight/torch.sqrt(L.bn_mean.running_var)
-        w = L.linear.weight*(scale.unsqueeze(0).T)
-        vmax = 10#torch.max(torch.abs(w))
-        img3 = ax3.imshow(w.detach().numpy(), cmap = 'bwr', vmax = vmax, vmin = -vmax)
+        
+        if L.linear.weight.data.dim() > 1:
+            w = L.linear.weight*(scale.unsqueeze(0).T)
+            vmax = 10#torch.max(torch.abs(w))
+            img3 = ax3.imshow(w.detach().numpy(), cmap = 'bwr', vmax = vmax, vmin = -vmax)
+            fig.colorbar(img3)
+        else:
+            w = (L.linear.weight*scale)
+            w = np.roll(w.detach().numpy(), (int(u.shape[1]/2), 0))
+            img3 = ax3.plot(w)
+            
         ax3.set_title('Recurrent weight (BN-scaled)')
-        fig.colorbar(img3)
+        
+        
        
         try:
             if len(L.input) > 3:                
@@ -295,6 +306,18 @@ class VisualizationTools():
                 ax4.set_xlabel('Neuron index')
                 ax4.set_title('External Input (after BN)')
         except:
+            ax4 = fig.add_subplot(2,2,4)
+            #ax4.plot(u[-1,:])
+            #ax4.plot(s[-1,:])
+            
+            u_ext = L.input[3][0,:,-1] + L.bn_mean.bias - scale*L.bn_mean.running_mean
+            u_ext = u_ext.detach().numpy()
+            u_ext = np.roll(u_ext,int(u.shape[1]/2) )
+            s_ext = L.input[4][0,:,-1].detach().numpy()
+            s_ext = np.roll(s_ext,int(u.shape[1]/2) )
+            ax4.set_title('External Input (after BN)')
+            ax4.plot(u_ext)
+            ax4.plot(s_ext)
             pass
 
         #ax4.plot(s_ext)
@@ -302,12 +325,15 @@ class VisualizationTools():
         fig2 = plt.figure()        
         for t in range( L.output[0].shape[0] + 1):
             if t == 0:
-                corr = L.input[2][i,:,:]
+                corr = L.input[2][i,:,:].detach().numpy()
             else:
-                corr = L.output[2][t-1,i,:,:]
+                corr = L.output[2][t-1,i,:,:].detach().numpy()
+                if L.linear.weight.data.dim() == 1:
+                    shift = (int(u.shape[1]/2), int(u.shape[1]/2))
+                    corr = np.roll(corr, shift, (0,1) )#
             
             ax = fig2.add_subplot(4,3,t+1)
-            img = ax.imshow( corr.detach().numpy(), vmin = -1, vmax = 1, cmap = 'bwr')
+            img = ax.imshow( corr, vmin = -1, vmax = 1, cmap = 'bwr')
             ax.set_xticks([])
             ax.set_yticks([])
             ax.set_title('t = {}'.format(t))
@@ -319,8 +345,9 @@ class VisualizationTools():
 if __name__ == "__main__":    
     
     ri = ResultInspector('synfire')    
-    model, config, checkpoint = ri.load_result('1611682239')
+    model, config, checkpoint = ri.load_result('1611777007')
     model, loss = ri.validate(model, config)  
-    VisualizationTools.plot_rnn(model)
+    VisualizationTools.plot_rnn(model)    
+    
     #VisualizationTools.trial_average(model)
     #runfile('./apps/synfire/synfire_visualization_tools.py', wdir='./')        
