@@ -10,6 +10,7 @@ import time
 from Mnn_Core.mnn_pytorch import *
 import numpy as np
 import torch
+import torch.fft
 
 #np.random.seed(1)
 
@@ -21,7 +22,7 @@ class SynfireChain():
         self.linear.weight.data = self.mexi_mat()
         
     
-    def mexi_mat(self, we = 15, wi = 8, de = 0.5, di = 1.5):
+    def mexi_mat(self, we = 5, wi = 1.5, de = 0.5, di = 1.5):
         "Mexican hat weight matrix"
         x = torch.arange(0.0, 2*np.pi, 2*np.pi/self.num_neurons)
         if self.weight_type == 'vonmises':            
@@ -38,7 +39,53 @@ class SynfireChain():
         for i in range(self.num_neurons):
             W[i,:] = y.roll(i)
         return W
-        
+    
+    def forward_fft(self, u, s, rho, u_ext, s_ext, timesteps = 100):
+        '''Experimental fft-based forward pass'''
+        with torch.no_grad():
+            U = torch.zeros(self.num_neurons ,timesteps)
+            S = torch.zeros(self.num_neurons ,timesteps)
+            R = torch.zeros(self.num_neurons , self.num_neurons, timesteps)
+            
+            w = self.linear.weight.data[0,:]
+            wfft = torch.fft.fft(w)            
+            
+            print('Shape of w: ',w.shape) #make sure the shape is the same
+            print('Shape of u: ',u.shape)
+            
+            
+            for i in range(timesteps):
+                #u, s, rho = self.linear.forward(u, s, rho)
+                
+                #>>>> FFT-based summation layer                
+                u = torch.fft.ifft(wfft*torch.fft.fft(u))
+                
+                C = rho*s.view(self.num_neurons,1)*s.view(1,self.num_neurons)
+                Cfft = torch.fft.fft( torch.fft.fft(C, dim = 0), dim = 1)
+                Cfft = wfft.view(self.num_neurons,1)*Cfft*wfft.view(1,self,num_neurons)
+                C = torch.fft.ifft(Cfft)
+                
+                s = torch.sqrt(torch.diag(C))                
+                rho = C/s.view(self.num_neurons,1)/s.view(1,self.num_neurons)
+                
+                #<<<<
+                
+                u += u_ext
+                s = torch.sqrt( s*s + s_ext*s_ext)
+                
+                u_activated = Mnn_Activate_Mean.apply(u, s)
+                s_activated = Mnn_Activate_Std.apply(u, s, u_activated)        
+                corr_activated = Mnn_Activate_Corr.apply( rho , u, s, u_activated, s_activated)
+                
+                u = u_activated.clone()
+                s = s_activated.clone()
+                rho = corr_activated.clone()
+                
+                U[:,i] = u
+                S[:,i] = s
+                R[:,:,i] = rho
+        return U, S, R
+    
     def forward(self, u, s, rho, u_ext, s_ext, timesteps = 100):
         with torch.no_grad():                        
             U = torch.zeros(self.num_neurons ,timesteps)
@@ -62,8 +109,8 @@ class SynfireChain():
                 S[:,i] = s
                 R[:,:,i] = rho
         return U, S, R
-    
-    def run(self, timesteps):
+           
+    def run(self, timesteps, use_fft = False):
         x = torch.arange(0.0, 2*np.pi, 2*np.pi/self.num_neurons).roll( int(self.num_neurons/2) )
         u = torch.exp( torch.cos(x)-1 ).squeeze(0)
         s = torch.exp( torch.cos(x)-1 ).squeeze(0)
@@ -71,8 +118,10 @@ class SynfireChain():
         
         u_ext = 0.3
         s_ext = 2
-        
-        U, S, R = self.forward(u, s, rho, u_ext, s_ext, timesteps = timesteps)
+        if use_fft:
+            U, S, R = self.forward_fft(u, s, rho, u_ext, s_ext, timesteps = timesteps)
+        else:
+            U, S, R = self.forward(u, s, rho, u_ext, s_ext, timesteps = timesteps)
             
         return U, S, R, x
     
@@ -220,9 +269,14 @@ class SynfireVisualize():
 #%% 
 if __name__ == "__main__":    
     sfc = SynfireChain(100, weight_type = 'gaussian')
-    #    U, S, R, x = sfc.run()
+    U, S, R, x = sfc.run(100, use_fft = True)
+    U2, S2, R2, x = sfc.run(100, use_fft = False)
+    
+    plt.plot(U[:,-1])
+    plt.plot(U2[:,-1],'.')
+    
     #WE, ie_ratio, U, S, R, x = sfc.para_sweep()
-    sfc.para_sweep_extra()
+    #sfc.para_sweep_extra()
     
     #plot_stuff(U,S,R, x)
     

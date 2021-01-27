@@ -7,7 +7,9 @@ Created on Mon Dec 28 22:26:28 2020
 import torch
 import os, fnmatch, json
 import numpy as np
-from apps.synfire.recurrent_nn import *
+#from apps.synfire.recurrent_nn import *
+from apps.synfire.recurrent_nn_w_input_current import *
+
 from apps.synfire.synfire_data import prod_normal
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
@@ -148,6 +150,7 @@ class ResultInspector():
                 loss = loss_function_mse(u, s, sample['target_data'][0], sample['target_data'][1])
             elif config['loss'] == 'mse_covariance':
                 loss = loss_mse_covariance(u, s, rho, sample['target_data'][0], sample['target_data'][1], sample['target_data'][2])
+            break
         
         return model, loss.item()
 
@@ -316,8 +319,8 @@ class VisualizationTools():
 if __name__ == "__main__":    
     
     ri = ResultInspector('synfire')    
-    model, config, checkpoint = ri.load_result('1611581133')
+    model, config, checkpoint = ri.load_result('1611682239')
     model, loss = ri.validate(model, config)  
-    #VisualizationTools.plot_rnn(model)
-    VisualizationTools.trial_average(model)
+    VisualizationTools.plot_rnn(model)
+    #VisualizationTools.trial_average(model)
     #runfile('./apps/synfire/synfire_visualization_tools.py', wdir='./')        
