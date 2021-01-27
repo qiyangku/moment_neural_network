@@ -28,7 +28,7 @@ class Mnn_Conv2d_Compose_without_Rho(nn.Module):
 
         self.std_bn2d = Mnn_Std_Bn2d(out_channels)
         if need_pool:
-            self.avg_pool2d = Mnn_AvgPool2d(kernel_size=2, stride=2)
+            self.avg_pool2d = Mnn_AvgPool2d_without_Rho(kernel_size=2, stride=2)
 
     def forward(self, mean, std):
         mean = self.mean_conv2d(mean)

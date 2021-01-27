@@ -19,7 +19,7 @@ class Mnn_MLP_without_Corr(torch.nn.Module):
 class Mnn_MLP_with_Corr(torch.nn.Module):
     def __init__(self):
         super(Mnn_MLP_with_Corr, self).__init__()
-        self.layer1 = Mnn_Layer_with_Rho(784, 800)
+        self.layer1 = Mnn_Linear_Module_with_Rho(784, 800)
         self.layer2 = Mnn_Linear_Corr(800, 10, bias=True)
 
     def forward(self, ubar, sbar, rho):

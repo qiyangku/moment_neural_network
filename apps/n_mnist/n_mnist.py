@@ -172,7 +172,7 @@ class nmistDataset(torch.utils.data.Dataset):
 class Mnn_MLP_with_Corr(torch.nn.Module):
     def __init__(self):
         super(Mnn_MLP_with_Corr, self).__init__()
-        self.layer1 = Mnn_Layer_with_Rho(34*34, 34*34)
+        self.layer1 = Mnn_Linear_Module_with_Rho(34 * 34, 34 * 34)
         self.layer2 = Mnn_Linear_Corr(34*34, 10, bias=True)
 
     def forward(self, ubar, sbar, rho):
@@ -384,11 +384,9 @@ class N_Mnist_Model_Training:
 
 
 if __name__ == '__main__':
-    with open("wrong_indx.bin", "rb") as f:
-        wrong_indx = pickle.load(f)
-    with open("wrong_pred.bin", "rb") as f:
-        wrong_pred = pickle.load(f)
-    print(len(wrong_pred))
+    data = nmistDataset()
+    td = read2Dspikes(data.file_path[37000])
+    anim = spikeFileIO.showTD(td, frameRate=500, repeat=True)
 
 
 # 118, 1224, 2008, 3082, 4653, 4889, 5774, 7602, 8545, 

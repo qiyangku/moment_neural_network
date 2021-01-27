@@ -171,7 +171,7 @@ class nmistDataset(torch.utils.data.Dataset):
 class Mnn_MLP_with_Corr(torch.nn.Module):
     def __init__(self):
         super(Mnn_MLP_with_Corr, self).__init__()
-        self.layer1 = Mnn_Layer_with_Rho(34 * 34, 34 * 34)
+        self.layer1 = Mnn_Linear_Module_with_Rho(34 * 34, 34 * 34)
         self.layer2 = Mnn_Linear_Corr(34 * 34, 10, bias=True)
 
     def forward(self, ubar, sbar, rho):
@@ -267,20 +267,20 @@ class N_Mnist_Model_Training:
         optimizer = torch.optim.Adam(net.parameters(), lr=self.learning_rate)
         net.train()
         criterion = torch.nn.CrossEntropyLoss()
-        count = 0
+
         print("------ MNIST MLP_CORR TRAINING START ------")
         for epoch in range(self.EPOCHS):
             for batch_idx, (mean, std, rho, target) in enumerate(self.train_loader):
                 optimizer.zero_grad()
                 out1, out2, out3 = net(mean, std, rho)
-                loss = criterion(out1 / (out2 + self.eps), target)
+                loss = criterion(out1, target)
                 loss.backward()
                 optimizer.step()
                 if batch_idx % self.log_interval == 0:
                     print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                         epoch, batch_idx * len(mean), len(self.train_loader.dataset),
                                100 * batch_idx / len(self.train_loader), loss.item()))
-                    count += 1
+
         self.model = net
         if save_op:
             torch.save(net, model_name)
@@ -320,7 +320,9 @@ if __name__ == "__main__":
     name = "mnn_mlp_nmnist.pt"
     tool = N_Mnist_Model_Training()
     tool.file_path = "./data/n_mnist/"
+    tool.fps = 500
     tool.EPOCHS = 5
-    tool.continue_training()
+    tool.fetch_dataset()
+    tool.continue_training(name)
     tool.test_mlp_corr_model(model_name=name)
 
