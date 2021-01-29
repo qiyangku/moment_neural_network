@@ -10,3 +10,6 @@ Mnn_Core/__pycache__/
 *.png
 *.xml
 *.pt
+*.bin
+*.gif
+*.mp4

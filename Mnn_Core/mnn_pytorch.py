@@ -5,14 +5,10 @@ Created on Sat Oct  3 14:49:43 2020
 @author: zzc14
 """
 
-import torch
 from Mnn_Core.mnn_utils import *
-from torch import Tensor
 from torch.nn.parameter import Parameter
 import torch.nn.functional as F
 from torch.nn import init
-from Mnn_Core.fast_dawson import *
-
 
 torch.set_default_tensor_type(torch.DoubleTensor)
 mnn_core_func = Mnn_Core_Func()
@@ -24,7 +20,7 @@ class Mnn_Linear_without_Corr(torch.nn.Module):
     out_features: int
     weight: Tensor
 
-    def __init__(self, in_features: int, out_features: int, bias: bool = False) -> None:
+    def __init__(self, in_features: int, out_features: int, bias: bool = False, ext_bias: bool = False) -> None:
         super(Mnn_Linear_without_Corr, self).__init__()
         self.in_features = in_features
         self.out_features = out_features
@@ -33,6 +29,11 @@ class Mnn_Linear_without_Corr(torch.nn.Module):
             self.bias = Parameter(torch.Tensor(out_features))
         else:
             self.register_parameter('bias', None)
+
+        if ext_bias:
+            self.ext_bias = Parameter(torch.Tensor(out_features))
+        else:
+            self.register_parameter("ext_bias", None)
         self.reset_parameters()
 
     def reset_parameters(self) -> None:
@@ -41,14 +42,18 @@ class Mnn_Linear_without_Corr(torch.nn.Module):
             fan_in, _ = init._calculate_fan_in_and_fan_out(self.weight)
             bound = 1 / np.sqrt(fan_in)
             init.uniform_(self.bias, -bound, bound)
+        if self.ext_bias is not None:
+            fan_in, _ = init._calculate_fan_in_and_fan_out(self.weight)
+            bound = 1 / np.sqrt(fan_in)
+            init.uniform_(self.ext_bias, 0, bound)
 
     def forward(self, input1: Tensor, input2: Tensor):
         assert input1.size() == input2.size()
         out1 = F.linear(input1, self.weight, self.bias)
-        if self.bias is not None:
-            out2 = F.linear(torch.pow(input2, 2), torch.pow(self.weight, 2), torch.pow(self.bias, 2))
+        if self.ext_bias is not None:
+            out2 = F.linear(torch.pow(input2, 2), torch.pow(self.weight, 2), torch.pow(self.ext_bias, 2))
         else:
-            out2 = F.linear(torch.pow(input2, 2), torch.pow(self.weight, 2), self.bias)
+            out2 = F.linear(torch.pow(input2, 2), torch.pow(self.weight, 2), self.ext_bias)
         out2 = torch.sqrt(out2)
         return out1, out2
 
@@ -64,15 +69,20 @@ class Mnn_Linear_Corr(torch.nn.Module):
     out_features: int
     weight: Tensor
 
-    def __init__(self, in_features: int, out_features: int, bias: bool = False) -> None:
+    def __init__(self, in_features: int, out_features: int, bias: bool = False, ext_std: bool = False) -> None:
         super(Mnn_Linear_Corr, self).__init__()
         self.in_features = in_features
         self.out_features = out_features
         self.weight = Parameter(torch.Tensor(out_features, in_features))
+        self.ratio = mnn_core_func.get_ratio()
         if bias:
             self.bias = Parameter(torch.Tensor(out_features))
         else:
             self.register_parameter('bias', None)
+        if ext_std:
+            self.ext_std = Parameter(torch.Tensor(out_features))
+        else:
+            self.register_parameter("ext_std", None)
         self.reset_parameters()
 
     def reset_parameters(self) -> None:
@@ -81,44 +91,20 @@ class Mnn_Linear_Corr(torch.nn.Module):
             fan_in, _ = init._calculate_fan_in_and_fan_out(self.weight)
             bound = 1 / np.sqrt(fan_in)
             init.uniform_(self.bias, -bound, bound)
+        if self.ext_std is not None:
+            fan_in, _ = init._calculate_fan_in_and_fan_out(self.weight)
+            bound = 1 / np.sqrt(fan_in)
+            init.uniform_(self.ext_std, 0, bound)
 
     def forward(self, mean_in: Tensor, std_in, corr_in: Tensor):
         assert mean_in.size() == std_in.size()
         # ratio not used for std and corr
-        ratio = mnn_core_func.get_ratio()
-        mean_out = F.linear(mean_in, self.weight, self.bias) * (1 - ratio)
-
+        mean_out = F.linear(mean_in, self.weight, self.bias) * (1 - self.ratio)
         # Use corr_in and std to compute the covariance matrix
-        if std_in.dim() == 1:
-            temp_std_in = std_in.view(1, -1)
-            temp_std_in = torch.mm(temp_std_in.transpose(1, 0), temp_std_in)
-            cov_in = torch.mul(temp_std_in, corr_in)
-        else:
-            temp_std_in = std_in.view(std_in.size()[0], 1, -1)
-            temp_std_in = torch.bmm(temp_std_in.transpose(-2, -1), temp_std_in)
-            # element-wise mul
-            cov_in = torch.mul(temp_std_in, corr_in)
-
+        cov_in = get_cov_matrix(std_in, corr_in)
         # cov_out = W C W^T
         cov_out = torch.matmul(self.weight, torch.matmul(cov_in, self.weight.transpose(1, 0)))
-        if self.bias is not None:
-            bias = self.bias.view(1, -1)
-            bias = torch.mm(bias.transpose(1, 0), bias)
-            cov_out += bias
-        if cov_out.dim() == 2:  # one sample case
-            var_out = torch.diagonal(cov_out)
-            # prevent negative value
-            std_out = torch.sqrt(torch.abs(var_out))
-            temp_std_out = std_out.view(1, -1)
-            temp_std_out = torch.mm(temp_std_out.transpose(1, 0), temp_std_out)
-            corr_out = torch.div(cov_out, temp_std_out)
-        else:
-            var_out = torch.diagonal(cov_out, dim1=-2, dim2=-1)
-            std_out = torch.sqrt(torch.abs(var_out))
-            temp_std_out = std_out.view(std_out.size()[0], 1, -1)
-            temp_std_out = torch.bmm(temp_std_out.transpose(-2, -1), temp_std_out)
-            # element-wise div
-            corr_out = torch.div(cov_out, temp_std_out)
+        std_out, corr_out = update_correlation(cov_out, self.ext_bias)
 
         return mean_out, std_out, corr_out
 
@@ -131,8 +117,8 @@ class Mnn_Linear_Corr(torch.nn.Module):
 class Mnn_Activate_Mean(torch.autograd.Function):
     @staticmethod
     def forward(ctx, mean_in, std_in):
-        clone_mean = mean_in.clone().detach().numpy()
-        clone_std = std_in.clone().detach().numpy()
+        clone_mean = mean_in.detach().numpy()
+        clone_std = std_in.detach().numpy()
         shape = clone_mean.shape
 
         # Todo Should remove flatten op to save time
@@ -150,9 +136,9 @@ class Mnn_Activate_Mean(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_output):
         mean_in, std_in, mean_out = ctx.saved_tensors
-        clone_mean_in = mean_in.clone().detach().numpy()
-        clone_std_in = std_in.clone().detach().numpy()
-        clone_mean_out = mean_out.clone().detach().numpy()
+        clone_mean_in = mean_in.detach().numpy()
+        clone_std_in = std_in.detach().numpy()
+        clone_mean_out = mean_out.detach().numpy()
 
         # Todo Should remove flatten op to save time
         shape = clone_std_in.shape
@@ -172,9 +158,9 @@ class Mnn_Activate_Mean(torch.autograd.Function):
 class Mnn_Activate_Std(torch.autograd.Function):
     @staticmethod
     def forward(ctx, mean_in, std_in, mean_out):
-        clone_mean = mean_in.clone().detach().numpy()
-        clone_std = std_in.clone().detach().numpy()
-        clone_mean_out = mean_out.clone().detach().numpy()
+        clone_mean = mean_in.detach().numpy()
+        clone_std = std_in.detach().numpy()
+        clone_mean_out = mean_out.detach().numpy()
         shape = clone_mean.shape
 
         # Todo Should remove flatten op to save time
@@ -191,10 +177,10 @@ class Mnn_Activate_Std(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_output):
         mean_in, std_in, mean_out, std_out = ctx.saved_tensors
-        clone_mean_in = mean_in.clone().detach().numpy()
-        clone_std_in = std_in.clone().detach().numpy()
-        clone_mean_out = mean_out.clone().detach().numpy()
-        clone_std_out = std_out.clone().detach().numpy()
+        clone_mean_in = mean_in.detach().numpy()
+        clone_std_in = std_in.detach().numpy()
+        clone_mean_out = mean_out.detach().numpy()
+        clone_std_out = std_out.detach().numpy()
         # Todo Should remove flatten op to save time
         shape = clone_std_in.shape
         clone_mean_in = clone_mean_in.flatten()
@@ -228,10 +214,10 @@ class Mnn_Activate_Corr(torch.autograd.Function):
         """
 
         # Compute the chi function
-        clone_mean_in = mean_in.clone().detach().numpy()
-        clone_std_in = std_in.clone().detach().numpy()
-        clone_mean_out = mean_out.clone().detach().numpy()
-        clone_std_out = std_out.clone().detach().numpy()
+        clone_mean_in = mean_in.detach().numpy()
+        clone_std_in = std_in.detach().numpy()
+        clone_mean_out = mean_out.detach().numpy()
+        clone_std_out = std_out.detach().numpy()
         shape = clone_mean_in.shape
         clone_mean_in = clone_mean_in.flatten()
         clone_mean_out = clone_mean_out.flatten()
@@ -258,7 +244,7 @@ class Mnn_Activate_Corr(torch.autograd.Function):
             corr_out = corr_out.fill_diagonal_(1.0)
 
         else:
-            torch.diagonal(corr_out, dim1=1, dim2=2).fill_(1.0)
+            torch.diagonal(corr_out, dim1=1, dim2=2).data.fill_(1.0)
         ctx.save_for_backward(corr_in, mean_in, std_in, mean_out, func_chi)
         return corr_out
 
@@ -266,10 +252,10 @@ class Mnn_Activate_Corr(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_out):
         corr_in, mean_in, std_in, mean_out, func_chi = ctx.saved_tensors
-        clone_mean_in = mean_in.clone().detach().numpy()
-        clone_std_in = std_in.clone().detach().numpy()
-        clone_mean_out = mean_out.clone().detach().numpy()
-        clone_func_chi = func_chi.clone().detach().numpy()
+        clone_mean_in = mean_in.detach().numpy()
+        clone_std_in = std_in.detach().numpy()
+        clone_mean_out = mean_out.detach().numpy()
+        clone_func_chi = func_chi.detach().numpy()
         shape = clone_std_in.shape
 
         # Todo unnecessary flatten operation, need to be optimised
@@ -283,9 +269,11 @@ class Mnn_Activate_Corr(torch.autograd.Function):
         chi_grad_mean = torch.from_numpy(chi_grad_mean.reshape(shape))
         chi_grad_std = torch.from_numpy(chi_grad_std.reshape(shape))
 
-        num = corr_in.size()[-1]
-        corr_in = corr_in * (torch.ones(num, num) - torch.eye(num))
-        
+        if corr_in.dim() != 2:
+            torch.diagonal(corr_in, dim1=1, dim2=2).data.fill_(0.0)
+        else:
+            corr_in = corr_in.fill_diagonal_(0.0)
+
         temp_corr_grad = torch.mul(grad_out, corr_in)
 
         if temp_corr_grad.dim() == 2:  # one sample case
@@ -308,7 +296,7 @@ class Mnn_Activate_Corr(torch.autograd.Function):
         corr_grad_corr = torch.mul(chi_matrix, grad_out)
         # set the diagonal element of corr_grad_corr to 0
         if corr_grad_corr.dim() != 2:
-            torch.diagonal(corr_grad_corr, dim1=1, dim2=2).fill_(0.0)
+            torch.diagonal(corr_grad_corr, dim1=1, dim2=2).data.fill_(0.0)
         else:
             corr_grad_corr = corr_grad_corr.fill_diagonal_(0.0)
 
@@ -318,7 +306,7 @@ class Mnn_Activate_Corr(torch.autograd.Function):
 
 
 class Mnn_Std_Bn1d(torch.nn.Module):
-    def __init__(self, features:  int, ext_bias=True):
+    def __init__(self, features: int, ext_bias=True):
         super(Mnn_Std_Bn1d, self).__init__()
         self.features = features
         if ext_bias:
@@ -379,6 +367,4 @@ class Mnn_Layer_without_Rho(torch.nn.Module):
         u = self.a1(uhat, shat)
         s = self.a2(uhat, shat, u)
         return u, s
-
-
 

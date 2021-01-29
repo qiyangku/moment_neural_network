@@ -5,6 +5,7 @@ from Mnn_Core.mnn_pytorch import *
 import itertools
 
 
+# Modules that correlation not involved:
 def _ntuple(n):
     def parse(x):
         if isinstance(x, torch._six.container_abcs.Iterable):
@@ -56,61 +57,9 @@ class Mnn_Std_Conv2d_without_Rho(torch.nn.Module):
         return self._std_conv_forward(module, inp)
 
 
-class Mnn_Std_Bn2d(torch.nn.Module):
-    def __init__(self, features: int, ext_bias=True):
-        super(Mnn_Std_Bn2d, self).__init__()
-        self.features = features
-        if ext_bias:
-            self.ext_bias = Parameter(torch.Tensor(features))
-        else:
-            self.register_parameter('ext_bias', None)
-        self.reset_parameters()
-
-    def reset_parameters(self) -> None:
-        if self.ext_bias is not None:
-            init.uniform_(self.ext_bias, 2, 10)
-
-    def _check_input_dim(self, input):
-        if input.dim() != 4:
-            raise ValueError('expected 4D input (got {}D input)'
-                             .format(input.dim()))
-
-    def _mnn_std_bn2d(self, module, mean, std):
-        assert type(module).__name__ == "BatchNorm2d"
-        self._check_input_dim(mean)
-        self._check_input_dim(std)
-        if module.training:
-            running_var = torch.zeros(self.features)
-            for i in range(self.features):
-                feature_map = mean[:, i, :, :]
-                running_var[i] = torch.var(feature_map, unbiased=False)
-
-        else:
-            if module.track_running_stats is True:
-                running_var = module.running_var
-            else:
-                running_var = torch.zeros(self.features)
-                for i in range(self.features):
-                    feature_map = mean[:, i, :, :]
-                    running_var[i] = torch.var(feature_map, unbiased=False)
-
-        out = torch.zeros_like(std)
-        for i in range(self.features):
-            x = std[:, i, :, :]
-            x = torch.pow(x, 2)
-            out[:, i, :, :] = x / (running_var[i] + module.eps) * torch.pow(module.weight[i], 2)
-            if self.ext_bias is not None:
-                out[:, i, :, :] += torch.pow(self.ext_bias[i], 2)
-
-        return torch.sqrt(out)
-
-    def forward(self, module, mean, std):
-        return self._mnn_std_bn2d(module, mean, std)
-
-
-class Mnn_Dropout(torch.nn.Module):
+class Mnn_Dropout_without_Rho(torch.nn.Module):
     def __init__(self, p: float = 0.5, inplace: bool = False):
-        super(Mnn_Dropout, self).__init__()
+        super(Mnn_Dropout_without_Rho, self).__init__()
         if p < 0 or p > 1:
             raise ValueError("dropout probability has to be between 0 and 1, "
                              "but got {}".format(p))
@@ -132,10 +81,10 @@ class Mnn_Dropout(torch.nn.Module):
         return mean, std
 
 
-class Mnn_AvgPool2d(torch.nn.Module):
+class Mnn_AvgPool2d_without_Rho(torch.nn.Module):
     def __init__(self, kernel_size, stride=None, padding=0, ceil_mode=False,
                  count_include_pad=True, divisor_override=None):
-        super(Mnn_AvgPool2d, self).__init__()
+        super(Mnn_AvgPool2d_without_Rho, self).__init__()
         self.kernel_size = kernel_size
         self.stride = stride if (stride is not None) else kernel_size
         self.padding = padding
@@ -158,10 +107,10 @@ class Mnn_AvgPool2d(torch.nn.Module):
         return mean, std
 
 
-class Mnn_AvgPool1d(torch.nn.Module):
+class Mnn_AvgPool1d_without_Rho(torch.nn.Module):
     def __init__(self, kernel_size, stride=None, padding=0, ceil_mode=False,
                  count_include_pad=True, divisor_override=None):
-        super(Mnn_AvgPool1d, self).__init__()
+        super(Mnn_AvgPool1d_without_Rho, self).__init__()
         self.kernel_size = kernel_size
         self.stride = stride if (stride is not None) else kernel_size
         self.padding = padding
@@ -183,9 +132,9 @@ class Mnn_AvgPool1d(torch.nn.Module):
         return mean, std
 
 
-class Mnn_MaxPool2d(torch.nn.Module):
+class Mnn_MaxPool2d_without_Rho(torch.nn.Module):
     def __init__(self, kernel_size: int, stride=None, padding=0, dilation=1, ceil_mode=False):
-        super(Mnn_MaxPool2d, self).__init__()
+        super(Mnn_MaxPool2d_without_Rho, self).__init__()
         self.kernel_size = kernel_size
         self.stride = stride if (stride is not None) else kernel_size
         self.padding = padding
@@ -213,4 +162,228 @@ class Mnn_MaxPool2d(torch.nn.Module):
                         temp_std[n, c, h, w] = std[n, c, p//std.size()[2], p % std.size()[3]]
         return mean, temp_std
 
+
+class Mnn_BatchNorm1d_without_Rho(torch.nn.Module):
+    def __init__(self, in_features: int, ext_std: bool = False):
+        super(Mnn_BatchNorm1d_without_Rho, self).__init__()
+        self.in_features = in_features
+        self.bn_mean = torch.nn.BatchNorm1d(in_features)
+        self.bn_mean.weight.data.fill_(2.5)
+        self.bn_mean.bias.data.fill_(2.5)
+
+        if ext_std:
+            self.ext_std = Parameter(torch.Tensor(in_features))
+        else:
+            self.register_parameter("ext_std", None)
+        self.reset_parameters()
+
+    def reset_parameters(self) -> None:
+        if self.ext_std is not None:
+            init.uniform_(self.ext_std, 2, 10)
+
+    def _compute_bn_op(self, ubar: Tensor, sbar: Tensor):
+        uhat = self.bn_mean(ubar)
+        if self.bn_mean.training:
+            var = torch.pow(sbar, 2) * torch.pow(self.bn_mean.weight, 2) / \
+                  (torch.var(ubar, dim=0, keepdim=True) + self.bn_mean.eps)
+            if self.ext_std is not None:
+                var += torch.pow(self.ext_std, 2)
+        else:
+            if self.bn_mean.track_running_stats:
+                var = torch.pow(sbar, 2) * torch.pow(self.bn_mean.weight, 2) / \
+                      (torch.var(ubar, dim=0, keepdim=True) + self.bn_mean.eps)
+            else:
+                var = torch.pow(sbar, 2) * torch.pow(self.bn_mean.weight, 2) / \
+                      (torch.var(ubar, dim=0, keepdim=True) + self.bn_mean.eps)
+            if self.ext_std is not None:
+                var += torch.pow(self.ext_std, 2)
+
+        shat = torch.sqrt(var)
+        return uhat, shat
+
+    def forward(self, ubar: Tensor, sbar: Tensor):
+        return self._compute_bn_op(ubar, sbar)
+
+
+class Mnn_Summation_Layer_without_Rho(torch.nn.Module):
+    def __init__(self, in_features: int, out_features: int, bias: bool = False, ext_bias_std: bool = False) -> None:
+        super(Mnn_Summation_Layer_without_Rho, self).__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.ratio = mnn_core_func.get_ratio()
+        self.weight = Parameter(torch.Tensor(out_features, in_features))
+        if bias:
+            self.bias = Parameter(torch.Tensor(out_features))
+        else:
+            self.register_parameter('bias', None)
+        if ext_bias_std:
+            self.ext_bias_std = Parameter(torch.Tensor(out_features))
+        else:
+            self.register_parameter("ext_bias_std", None)
+        self.reset_parameters()
+
+    def extra_repr(self) -> str:
+        return 'in_features={}, out_features={}, bias={}, ext_bias_std={}'.format(
+            self.in_features, self.out_features, self.bias is not None, self.ext_bias_std is not None
+        )
+
+    def reset_parameters(self) -> None:
+        init.kaiming_uniform_(self.weight, a=np.sqrt(5))
+        if self.bias is not None:
+            fan_in, _ = init._calculate_fan_in_and_fan_out(self.weight)
+            bound = 1 / np.sqrt(fan_in)
+            init.uniform_(self.bias, -bound, bound)
+        if self.ext_bias_std is not None:
+            fan_in, _ = init._calculate_fan_in_and_fan_out(self.weight)
+            bound = 1 / np.sqrt(fan_in)
+            init.uniform_(self.ext_bias_std, 0, bound)
+
+    def forward(self, ubar: Tensor, sbar: Tensor):
+        assert ubar.size() == sbar.size()
+        ubar = F.linear(ubar, self.weight, self.bias)
+        if self.ext_bias_std is not None:
+            var = F.linear(torch.pow(ubar, 2), torch.pow(self.weight, 2), torch.pow(self.ext_bias_std, 2))
+        else:
+            var = F.linear(torch.pow(ubar, 2), torch.pow(self.weight, 2), self.ext_bias_std)
+        sbar = torch.sqrt(var)
+        return ubar, sbar
+
+
+class Mnn_Linear_Module_without_Rho(torch.nn.Module):
+    def __init__(self, input_size: int, output_size: int, bn_ext_std: bool = False):
+        super(Mnn_Linear_Module_without_Rho, self).__init__()
+        self.input_size = input_size
+        self.output_size = output_size
+        self.bn_ext_std = bn_ext_std
+
+        self.linear = Mnn_Summation_Layer_without_Rho(input_size, output_size)
+        self.bn = Mnn_BatchNorm1d_without_Rho(in_features=output_size, ext_std=bn_ext_std)
+
+    def forward(self, ubar: Tensor, sbar: Tensor):
+        ubar, sbar = self.linear(ubar, sbar)
+        ubar, sbar = self.bn(ubar, sbar)
+        u = Mnn_Activate_Mean(ubar, sbar)
+        s = Mnn_Activate_Std(ubar, sbar, u)
+        return u, s
+
+
+# Modules that correlation is involved
+class Mnn_BatchNorm1d_with_Rho(torch.nn.Module):
+    def __init__(self, in_features: int, ext_std: bool = False):
+        super(Mnn_BatchNorm1d_with_Rho, self).__init__()
+        self.in_features = in_features
+        self.bn_mean = torch.nn.BatchNorm1d(in_features)
+        self.bn_mean.weight.data.fill_(2.5)
+        self.bn_mean.bias.data.fill_(2.5)
+
+        if ext_std:
+            self.ext_std = Parameter(torch.Tensor(in_features))
+        else:
+            self.register_parameter("ext_std", None)
+        self.reset_parameters()
+
+    def reset_parameters(self) -> None:
+        if self.ext_std is not None:
+            init.uniform_(self.ext_std, 2, 10)
+
+    def _compute_bn_op(self, ubar: Tensor, sbar: Tensor, corr_in: Tensor):
+        uhat = self.bn_mean(ubar)
+        if self.bn_mean.training:
+            var = torch.pow(sbar, 2) * torch.pow(self.bn_mean.weight, 2) / \
+                  (torch.var(ubar, dim=0, keepdim=True) + self.bn_mean.eps)
+            if self.ext_std is not None:
+                # need update correlation matrix
+                std_out = torch.sqrt(var)
+                cov_in = get_cov_matrix(std_out, corr_in)
+                std_out, corr_in = update_correlation(cov_in, self.ext_std)
+            else:
+                std_out = torch.sqrt(var)
+        else:
+            if self.bn_mean.track_running_stats is True:
+                var = torch.pow(sbar, 2) * torch.pow(self.bn_mean.weight, 2) / \
+                      (self.bn_mean.running_var + self.bn_mean.eps)
+            else:
+                var = torch.pow(sbar, 2) * torch.pow(self.bn_mean.weight, 2) / \
+                      (torch.var(ubar, dim=0, keepdim=True) + self.bn_mean.eps)
+            if self.ext_std is not None:
+                # need update correlation matrix
+                std_out = torch.sqrt(var)
+                cov_in = get_cov_matrix(std_out, corr_in)
+                std_out, corr_in = update_correlation(cov_in, self.ext_std)
+            else:
+                std_out = torch.sqrt(var)
+
+        return uhat, std_out, corr_in
+
+    def forward(self, ubar: Tensor, sbar: Tensor, corr_in: Tensor):
+        return self._compute_bn_op(ubar, sbar, corr_in)
+
+
+class Mnn_Summation_Layer_with_Rho(torch.nn.Module):
+    def __init__(self, in_features: int, out_features: int, bias: bool = False, ext_bias_std: bool = False) -> None:
+        super(Mnn_Summation_Layer_with_Rho, self).__init__()
+
+        self.in_features = in_features
+        self.out_features = out_features
+        self.ratio = mnn_core_func.get_ratio()
+        self.weight = Parameter(torch.Tensor(out_features, in_features))
+        if bias:
+            self.bias = Parameter(torch.Tensor(out_features))
+        else:
+            self.register_parameter('bias', None)
+        if ext_bias_std:
+            self.ext_bias_std = Parameter(torch.Tensor(out_features))
+        else:
+            self.register_parameter("ext_bias_std", None)
+        self.reset_parameters()
+
+    def extra_repr(self) -> str:
+        return 'in_features={}, out_features={}, bias={}, ext_bias_std={}'.format(
+            self.in_features, self.out_features, self.bias is not None, self.ext_bias_std is not None
+        )
+
+    def reset_parameters(self) -> None:
+        init.kaiming_uniform_(self.weight, a=np.sqrt(5))
+        if self.bias is not None:
+            fan_in, _ = init._calculate_fan_in_and_fan_out(self.weight)
+            bound = 1 / np.sqrt(fan_in)
+            init.uniform_(self.bias, -bound, bound)
+        if self.ext_bias_std is not None:
+            fan_in, _ = init._calculate_fan_in_and_fan_out(self.weight)
+            bound = 1 / np.sqrt(fan_in)
+            init.uniform_(self.ext_bias_std, 0, bound)
+
+    def forward(self, mean_in: Tensor, std_in: Tensor, corr_in: Tensor):
+        assert mean_in.size() == std_in.size()
+        # ratio not used for std and corr
+        mean_out = F.linear(mean_in, self.weight, self.bias)
+        # Use corr_in and std to compute the covariance matrix
+        cov_in = get_cov_matrix(std_in, corr_in)
+        # cov_out = W C W^T
+        cov_out = torch.matmul(self.weight, torch.matmul(cov_in, self.weight.transpose(1, 0)))
+        std_out, corr_out = update_correlation(cov_out, self.ext_bias_std)
+
+        return mean_out, std_out, corr_out
+
+
+class Mnn_Linear_Module_with_Rho(torch.nn.Module):
+    def __init__(self, input_size: int, output_size: int, bn_ext_std: bool = False):
+        super(Mnn_Linear_Module_with_Rho, self).__init__()
+        self.input_size = input_size
+        self.output_size = output_size
+        self.bn_ext_std = bn_ext_std
+
+        self.linear = Mnn_Summation_Layer_with_Rho(input_size, output_size)
+        self.bn = Mnn_BatchNorm1d_with_Rho(in_features=output_size, ext_std=bn_ext_std)
+
+    def forward(self, u, s, rho):
+        u, s, rho = self.linear(u, s, rho)
+
+        u, s, rho = self.bn(u, s, rho)
+
+        u_activated = Mnn_Activate_Mean.apply(u, s)
+        s_activated = Mnn_Activate_Std.apply(u, s, u_activated)
+        corr_activated = Mnn_Activate_Corr.apply(rho, u, s, u_activated, s_activated)
+
+        return u_activated, s_activated, corr_activated
 
