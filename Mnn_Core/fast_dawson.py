@@ -5,11 +5,8 @@
 
 
 import numpy as np
-import mpmath as mpm
-from scipy.special import erfcx, gamma, erfi, erfc, dawsn
 from scipy.integrate import quad
-import matplotlib.pyplot as plt
-import time
+from scipy.special import erfcx, erfi, erfc, dawsn
 
 
 class Coeffs():
