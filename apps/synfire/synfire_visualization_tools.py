@@ -345,7 +345,7 @@ class VisualizationTools():
 if __name__ == "__main__":    
     
     ri = ResultInspector('synfire')    
-    model, config, checkpoint = ri.load_result('1611777007')
+    model, config, checkpoint = ri.load_result('1611782282')
     model, loss = ri.validate(model, config)  
     VisualizationTools.plot_rnn(model)    
     
