@@ -137,9 +137,12 @@ class ResultInspector():
         validation_dataloader = torch.utils.data.DataLoader(validation_dataset, batch_size = 32, shuffle=False)
         
         model.eval() #set to evaluation mode
+        model.max_time_steps = 500 #propagate for much longer time than in training
+        
         for i_batch, sample in enumerate(validation_dataloader):
-            ext_mean = torch.ones(sample['input_data'][3].shape)
-            ext_std = torch.ones(sample['input_data'][4].shape)        
+            size = list(sample['input_data'][3].shape[:-1]) + [model.max_time_steps]
+            ext_mean = torch.ones(size)
+            ext_std = torch.ones(size)        
             
             if config['with_corr']:
                 u, s, rho = model.forward(sample['input_data'][0], sample['input_data'][1], sample['input_data'][2], ext_mean , ext_std)
@@ -258,8 +261,8 @@ class VisualizationTools():
         
         ax1 = fig.add_subplot(2,2,1)    
         u = L.output[0][:,i,:].detach().numpy()
-        u = np.roll(u, (int(u.shape[1]/2), 0))
-        img1 = ax1.imshow(u, origin = 'lower', aspect = 'auto')
+        u = np.roll(u, (int(u.shape[1]/2), 0))        
+        img1 = ax1.imshow(u, origin = 'lower', aspect = 'auto', vmin = 0, vmax = np.max(u[-1,:]))
         ax1.set_xlabel('Neuron index')
         ax1.set_ylabel('Time steps')
         ax1.set_title('Mean')
@@ -269,12 +272,12 @@ class VisualizationTools():
         ax2 = fig.add_subplot(2,2,2)    
         s = L.output[1][:,i,:].detach().numpy()
         s = np.roll(s, (int(s.shape[1]/2), 0))
-        img2 = ax2.imshow(s, origin = 'lower', aspect = 'auto')
+        img2 = ax2.imshow(s, origin = 'lower', aspect = 'auto', vmin = 0, vmax = np.max(s[-1,:]))
         
         ax2.set_xlabel('Neuron index')
         ax2.set_title('Std')
         cbar2 = fig.colorbar(img2)
-        cbar2.set_label('kHz')
+        cbar2.set_label(r'kHz$^\frac{1}{2}$')
         #plt.imshow(u, cmap = 'bwr', vmin = -1, vmax = 1)
         
         ax3 = fig.add_subplot(2,2,3)
@@ -288,7 +291,9 @@ class VisualizationTools():
         else:
             w = (L.linear.weight*scale)
             w = np.roll(w.detach().numpy(), (int(u.shape[1]/2), 0))
-            img3 = ax3.plot(w)
+            xx = np.arange(int(len(w)))-int(len(w)/2)
+            img3 = ax3.plot(xx,w)
+            ax3.set_xlabel('')
             
         ax3.set_title('Recurrent weight (BN-scaled)')
         
@@ -322,21 +327,24 @@ class VisualizationTools():
 
         #ax4.plot(s_ext)
         
-        fig2 = plt.figure()        
-        for t in range( L.output[0].shape[0] + 1):
-            if t == 0:
-                corr = L.input[2][i,:,:].detach().numpy()
-            else:
-                corr = L.output[2][t-1,i,:,:].detach().numpy()
-                if L.linear.weight.data.dim() == 1:
-                    shift = (int(u.shape[1]/2), int(u.shape[1]/2))
-                    corr = np.roll(corr, shift, (0,1) )#
+        fig2 = plt.figure()
+        jj = 0        
+        for t in range( L.output[0].shape[0] + 1):            
+            if t % 10 == 0:
+                jj+=1
+                if t == 0:
+                    corr = L.input[2][i,:,:].detach().numpy()
+                else:
+                    corr = L.output[2][t-1,i,:,:].detach().numpy()
+                    if L.linear.weight.data.dim() == 1:
+                        shift = (int(u.shape[1]/2), int(u.shape[1]/2))
+                        corr = np.roll(corr, shift, (0,1) )#
             
-            ax = fig2.add_subplot(4,3,t+1)
-            img = ax.imshow( corr, vmin = -1, vmax = 1, cmap = 'bwr')
-            ax.set_xticks([])
-            ax.set_yticks([])
-            ax.set_title('t = {}'.format(t))
+                ax = fig2.add_subplot(10,8,jj)
+                img = ax.imshow( corr, vmin = -1, vmax = 1, cmap = 'bwr')
+                ax.set_xticks([])
+                ax.set_yticks([])
+                ax.set_title('t = {}'.format(t))
         
         fig2.colorbar(img)
         
