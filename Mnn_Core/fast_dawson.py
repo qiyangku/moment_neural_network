@@ -23,8 +23,9 @@ class Dawson1:
         self.coef = Coeffs()        
         self.coef.div = 4
         self.coef.deg = 8        
-        self.coef.cheb_xmin_for_G = -6.0  
+        self.coef.cheb_xmin_for_G = -6.0        
         self.coef.cheb_G_neg = Chebyshev.chebfit_no_transform(self.int_brute_force, xmin = self.coef.cheb_xmin_for_G, xmax = 0, num_subdiv = self.coef.div, degree_cheb = self.coef.deg)
+        self.coef.cheb_g_neg = Chebyshev.chebfit_neg(self.dawson1, num_subdiv = self.coef.div, degree_cheb = self.coef.deg)
         
         return
 
@@ -32,7 +33,33 @@ class Dawson1:
         '''Compute Dawson function with existing library'''
         y = erfcx(-x) * np.sqrt(np.pi) / 2
         return y
-
+    
+    def dawson1_custom(self, x):
+        '''Compute Dawson function with custom implementation'''
+        region1 = -np.abs(x) < self.coef.cheb_xmin_for_G               
+        region2 = ~region1
+        region2_pos = x > 0 
+        
+        y = np.zeros(x.size)
+        
+        y[region1] = self.asym_neginf(-np.abs(x[region1]))        
+        y[region2] = Chebyshev.chebval_neg(-np.abs(x[region2]), self.coef.cheb_g_neg, num_subdiv = self.coef.div, degree_cheb = self.coef.deg)
+        y[region2_pos] = np.sqrt(np.pi)*np.exp(x[region2_pos]*x[region2_pos]) - y[region2_pos]
+        return y
+        
+    def asym_neginf(self,x):
+        '''Compute asymptotic expansion of the indefinite integral of g(x) for x<<-1
+        Use recurrence relation so it only contains multiplication and addition.
+        a(n+1)/a(n) = -(2n+1)/(2x^2)
+        '''        
+        a = -0.5/x #first term
+        h = a.copy()
+        for n in range(5):
+            a = -a*0.5*(2*n+1)/(x*x)
+            h += a
+            
+        return h
+        
     def int_fast(self, x):
         '''fast approximation'''
         
@@ -50,7 +77,7 @@ class Dawson1:
         return y    
     
     def int_asym_neginf(self, x):
-        '''Compute asymptotic expansion of the indefinite integral of g(x) for x<<-1'''
+        '''Compute asymptotic expansion of the indefinite integral of G(x) for x<<-1'''
         A = [-1 / 8, 3 / 32, -5 / 32]
         #h = 0.25 * (-np.euler_gamma - np.log(4)) - 0.5 * np.log(-x)  # - 0.25*np.real(np.log(-x*x+0j)), just keep the real part
         h = -0.25*np.euler_gamma - 0.5 * np.log(-2*x)
